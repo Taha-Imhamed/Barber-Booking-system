@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { Scissors } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,26 +49,26 @@ export default function Auth() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4 relative overflow-hidden">
+    <div className="min-h-screen bg-white flex items-center justify-center p-4 relative overflow-hidden">
       {/* Decorative background */}
       <div className="absolute inset-0 z-0">
-        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-amber-500/10 rounded-full blur-[100px]"></div>
+        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-amber-500/5 rounded-full blur-[100px]"></div>
         <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-amber-500/5 rounded-full blur-[100px]"></div>
       </div>
 
       <div className="w-full max-w-md relative z-10">
         <div className="flex justify-center mb-8">
-          <div className="bg-amber-500 p-3 rounded-2xl shadow-[0_0_30px_rgba(245,158,11,0.3)]">
+          <div className="bg-amber-500 p-3 rounded-2xl shadow-[0_0_30px_rgba(245,158,11,0.2)]">
             <Scissors className="w-8 h-8 text-zinc-950" />
           </div>
         </div>
 
-        <Card className="bg-zinc-900/80 backdrop-blur-xl border-zinc-800 text-zinc-100 shadow-2xl">
+        <Card className="bg-white/80 backdrop-blur-xl border-zinc-200 text-zinc-900 shadow-2xl">
           <CardHeader className="text-center">
-            <CardTitle className="text-3xl font-display text-amber-500">
+            <CardTitle className="text-3xl font-display text-amber-600">
               {isLogin ? "Sign In" : "Join the Club"}
             </CardTitle>
-            <CardDescription className="text-zinc-400">
+            <CardDescription className="text-zinc-500">
               {isLogin ? "Access your appointments & points" : "Create an account to earn loyalty points"}
             </CardDescription>
           </CardHeader>
@@ -78,30 +78,30 @@ export default function Auth() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>First Name</Label>
-                    <Input className="bg-zinc-950 border-zinc-800" required value={formData.firstName} onChange={(e) => updateForm("firstName", e.target.value)} />
+                    <Input className="bg-white border-zinc-200" required value={formData.firstName} onChange={(e) => updateForm("firstName", e.target.value)} />
                   </div>
                   <div className="space-y-2">
                     <Label>Last Name</Label>
-                    <Input className="bg-zinc-950 border-zinc-800" required value={formData.lastName} onChange={(e) => updateForm("lastName", e.target.value)} />
+                    <Input className="bg-white border-zinc-200" required value={formData.lastName} onChange={(e) => updateForm("lastName", e.target.value)} />
                   </div>
                   <div className="space-y-2">
                     <Label>Phone</Label>
-                    <Input className="bg-zinc-950 border-zinc-800" required type="tel" value={formData.phone} onChange={(e) => updateForm("phone", e.target.value)} />
+                    <Input className="bg-white border-zinc-200" required type="tel" value={formData.phone} onChange={(e) => updateForm("phone", e.target.value)} />
                   </div>
                   <div className="space-y-2">
                     <Label>Email</Label>
-                    <Input className="bg-zinc-950 border-zinc-800" required type="email" value={formData.email} onChange={(e) => updateForm("email", e.target.value)} />
+                    <Input className="bg-white border-zinc-200" required type="email" value={formData.email} onChange={(e) => updateForm("email", e.target.value)} />
                   </div>
                 </div>
               )}
 
               <div className="space-y-2">
                 <Label>Username</Label>
-                <Input className="bg-zinc-950 border-zinc-800" required value={formData.username} onChange={(e) => updateForm("username", e.target.value)} />
+                <Input className="bg-white border-zinc-200" required value={formData.username} onChange={(e) => updateForm("username", e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label>Password</Label>
-                <Input className="bg-zinc-950 border-zinc-800" required type="password" value={formData.password} onChange={(e) => updateForm("password", e.target.value)} />
+                <Input className="bg-white border-zinc-200" required type="password" value={formData.password} onChange={(e) => updateForm("password", e.target.value)} />
               </div>
 
               <Button type="submit" className="w-full bg-amber-500 hover:bg-amber-600 text-black font-bold mt-6" disabled={isLoggingIn || isRegistering}>
@@ -112,7 +112,7 @@ export default function Auth() {
                 <button 
                   type="button" 
                   onClick={() => setIsLogin(!isLogin)} 
-                  className="text-sm text-zinc-400 hover:text-amber-500 transition-colors"
+                  className="text-sm text-zinc-500 hover:text-amber-600 transition-colors"
                 >
                   {isLogin ? "Don't have an account? Register" : "Already have an account? Sign in"}
                 </button>
@@ -122,7 +122,7 @@ export default function Auth() {
         </Card>
         
         <div className="text-center mt-6">
-          <Link href="/" className="text-sm text-zinc-500 hover:text-white transition-colors">
+          <Link href="/" className="text-sm text-zinc-400 hover:text-zinc-900 transition-colors">
             ← Back to Home
           </Link>
         </div>

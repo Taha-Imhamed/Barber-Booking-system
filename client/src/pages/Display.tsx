@@ -135,5 +135,4 @@ export default function Display() {
       </div>
     </div>
   );
-  );
 }
