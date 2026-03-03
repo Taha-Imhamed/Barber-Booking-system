@@ -13,12 +13,12 @@ export async function registerRoutes(
   async function seed() {
     const branches = await storage.getBranches();
     if (branches.length === 0) {
-      const b1 = await storage.createBranch({ name: "Downtown Sharp", location: "Downtown Tirana" });
-      const b2 = await storage.createBranch({ name: "Uptown Fades", location: "Blloku Area" });
+      const b1 = await storage.createBranch({ name: "Wilson", location: "Wilson Square" });
+      const b2 = await storage.createBranch({ name: "Kavaja", location: "Kavaja Street" });
       
       const admin = await storage.createUser({
         username: "admin",
-        password: "password123", // Basic mock auth
+        password: "admin", // User requested admin/admin
         role: "admin",
         firstName: "Super",
         lastName: "Admin",

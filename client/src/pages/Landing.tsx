@@ -25,12 +25,12 @@ export default function Landing() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div className="space-y-8">
-              <h1 className="text-5xl md:text-7xl font-display font-bold text-white leading-tight">
+              <h1 className="text-5xl md:text-7xl font-display font-bold text-zinc-900 leading-tight">
                 Refine Your <br/>
                 <span className="text-amber-500 italic">Signature Look</span>
               </h1>
-              <p className="text-lg md:text-xl text-zinc-400 max-w-lg font-light leading-relaxed">
-                Experience premium grooming with our master barbers. Reserve your seat, earn loyalty points, and walk out with confidence.
+              <p className="text-lg md:text-xl text-zinc-500 max-w-lg font-light leading-relaxed">
+                Experience premium grooming at <span className="font-bold text-zinc-900">Istanbul Salon</span>. Reserve your seat, earn loyalty points, and walk out with confidence.
               </p>
               
               <div className="flex items-center gap-4 text-sm font-medium text-zinc-300">

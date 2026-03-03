@@ -14,8 +14,8 @@ export function Navbar() {
             <div className="bg-amber-500 p-2 rounded-lg group-hover:scale-105 transition-transform">
               <Scissors className="w-6 h-6 text-zinc-950" />
             </div>
-            <span className="font-display text-2xl font-bold text-white tracking-wide">
-              BLADE <span className="text-amber-500 font-sans text-xl font-normal opacity-80">&</span> CO
+            <span className="font-display text-2xl font-bold text-zinc-950 tracking-wide">
+              ISTANBUL <span className="text-amber-500 font-sans text-xl font-normal opacity-80">SALON</span>
             </span>
           </Link>
           

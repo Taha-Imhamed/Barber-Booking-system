@@ -9,36 +9,58 @@
     --font-sans: 'DM Sans', sans-serif;
     --font-display: 'Playfair Display', serif;
 
-    /* Dark luxury palette */
-    --background: 240 10% 4%;
-    --foreground: 0 0% 98%;
+    /* Modern clean white theme */
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
 
-    --card: 240 10% 6%;
-    --card-foreground: 0 0% 98%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
 
-    --popover: 240 10% 6%;
-    --popover-foreground: 0 0% 98%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
 
     --primary: 43 96% 56%; /* Amber-500 */
-    --primary-foreground: 240 10% 4%;
+    --primary-foreground: 0 0% 98%;
 
-    --secondary: 240 10% 12%;
-    --secondary-foreground: 0 0% 98%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
 
-    --muted: 240 10% 12%;
-    --muted-foreground: 240 5% 65%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
 
-    --accent: 43 96% 56%;
-    --accent-foreground: 240 10% 4%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
 
-    --destructive: 0 84% 60%;
+    --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 240 10% 15%;
-    --input: 240 10% 15%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
     --ring: 43 96% 56%;
 
     --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 43 96% 56%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 43 96% 56%;
   }
 
   * {
@@ -64,7 +86,7 @@
   }
   
   .glass-panel {
-    @apply bg-zinc-900/60 backdrop-blur-xl border border-zinc-800 shadow-2xl;
+    @apply bg-white/60 backdrop-blur-xl border border-zinc-200 shadow-2xl;
   }
 }
 
