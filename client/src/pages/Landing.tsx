@@ -1,101 +1,175 @@
-import { Link } from "wouter";
 import { ReservationForm } from "@/components/ReservationForm";
 import { Navbar } from "@/components/layout/Navbar";
 import { useBarbers } from "@/hooks/use-barbers";
+import { useBranches } from "@/hooks/use-branches";
+import { CalendarClock, ShieldCheck, Gift, MapPin } from "lucide-react";
+import { useMemo, useState } from "react";
+import { useI18n } from "@/i18n";
+import { Button } from "@/components/ui/button";
+
+const HERO_BG =
+  "https://static.vecteezy.com/ti/photos-gratuite/t2/65578350-cette-bien-equipe-salon-de-coiffure-caracteristiques-une-tondeuse-en-train-de-preparer-pour-barbe-toilettage-seances-photo.jpg";
 
 export default function Landing() {
   const { data: barbers } = useBarbers();
-
+  const { data: branches } = useBranches();
+  const { t } = useI18n();
+  const [selectedBarberId, setSelectedBarberId] = useState<number | null>(null);
+  const [confirmBarberId, setConfirmBarberId] = useState<number | null>(null);
+  const barberById = useMemo(() => new Map((barbers ?? []).map((b) => [Number(b.id), b])), [barbers]);
+  const barbersByBranch = useMemo(() => {
+    return (branches ?? []).map((branch) => ({
+      ...branch,
+      barbers: (barbers ?? []).filter((b) => b.role === "barber" && b.isAvailable !== false && Number(b.branchId) === Number(branch.id)),
+    }));
+  }, [branches, barbers]);
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background text-zinc-900">
       <Navbar />
-      
-      {/* Hero Section */}
-      <section className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden">
-        {/* landing page hero barbershop background */}
-        <div className="absolute inset-0 z-0">
-          <img 
-            src="https://images.unsplash.com/photo-1585747860715-2ba37e788b70?w=1920&h=1080&fit=crop" 
-            alt="Barbershop Background" 
-            className="w-full h-full object-cover opacity-20"
-          />
-          <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-background/80 to-background"></div>
+
+      <section className="relative pt-8 md:pt-12 pb-14 px-4 sm:px-6 overflow-hidden">
+        <div className="absolute inset-0">
+          <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url('${HERO_BG}')` }} />
+          <div className="absolute inset-0 bg-gradient-to-r from-black/65 via-black/55 to-black/35" />
         </div>
 
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
-            <div className="space-y-8">
-              <h1 className="text-5xl md:text-7xl font-display font-bold text-zinc-900 leading-tight">
-                Refine Your <br/>
-                <span className="text-amber-500 italic">Signature Look</span>
-              </h1>
-              <p className="text-lg md:text-xl text-zinc-500 max-w-lg font-light leading-relaxed">
-                Experience premium grooming at <span className="font-bold text-zinc-900">Istanbul Salon</span>. Reserve your seat, earn loyalty points, and walk out with confidence.
-              </p>
-              
-              <div className="flex items-center gap-4 text-sm font-medium text-zinc-300">
-                <div className="flex -space-x-3">
-                  {/* mockup avatars */}
-                  <img src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop" className="w-10 h-10 rounded-full border-2 border-background" />
-                  <img src="https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=100&h=100&fit=crop" className="w-10 h-10 rounded-full border-2 border-background" />
-                  <div className="w-10 h-10 rounded-full border-2 border-background bg-amber-500 flex items-center justify-center text-zinc-950 font-bold text-xs">
-                    5k+
-                  </div>
-                </div>
-                <p>Happy Clients</p>
+        <div className="max-w-7xl mx-auto grid lg:grid-cols-[1.1fr_1fr] gap-10 items-start relative z-10">
+          <div className="order-2 lg:order-1 space-y-6 text-white">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-black/20 px-4 py-2 text-xs font-semibold uppercase tracking-wider">
+              Priority booking available for signed-in clients
+            </div>
+            <h1 className="text-4xl md:text-6xl leading-tight font-semibold">
+              Istanbul Salon.
+              <br />
+              Reserve fast.
+              <br />
+              Arrive ready.
+            </h1>
+            <p className="max-w-xl text-lg text-zinc-100">
+              Pick branch, barber, service, date, and time in under a minute. Sign up as client to save history and loyalty points.
+            </p>
+            <div className="grid sm:grid-cols-3 gap-3">
+              <div className="rounded-xl border border-white/20 bg-black/25 p-4">
+                <CalendarClock className="w-5 h-5 text-amber-300 mb-2" />
+                <p className="font-semibold">Real-time approval</p>
+                <p className="text-sm text-zinc-200">Barbers accept, reject, or postpone requests.</p>
+              </div>
+              <div className="rounded-xl border border-white/20 bg-black/25 p-4">
+                <ShieldCheck className="w-5 h-5 text-amber-300 mb-2" />
+                <p className="font-semibold">Priority system</p>
+                <p className="text-sm text-zinc-200">Registered users are prioritized.</p>
+              </div>
+              <div className="rounded-xl border border-white/20 bg-black/25 p-4">
+                <Gift className="w-5 h-5 text-amber-300 mb-2" />
+                <p className="font-semibold">Loyalty rewards</p>
+                <p className="text-sm text-zinc-200">Earn points and unlock discounts.</p>
               </div>
             </div>
-            
-            <div className="relative">
-              <div className="absolute -inset-1 bg-amber-500/20 blur-3xl rounded-[2rem]"></div>
-              <ReservationForm />
-            </div>
+          </div>
+          <div className="order-1 lg:order-2">
+            <ReservationForm preselectedBarberId={selectedBarberId} />
           </div>
         </div>
       </section>
 
-      {/* Barbers Section */}
-      <section className="py-24 bg-zinc-950 border-t border-zinc-900">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16 space-y-4">
-            <h2 className="text-4xl font-display font-bold text-white">Meet Our Masters</h2>
-            <div className="w-24 h-1 bg-amber-500 mx-auto rounded-full"></div>
-            <p className="text-zinc-400 max-w-2xl mx-auto">Decades of combined experience dedicated to the craft of traditional and modern barbering.</p>
-          </div>
-
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
-            {barbers?.filter(b => b.role === 'barber').map((barber) => (
-              <div key={barber.id} className="group relative overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/50 hover:border-amber-500/50 transition-colors duration-300">
-                <div className="aspect-[4/5] overflow-hidden">
-                  <img 
-                    src={barber.photoUrl || "https://images.unsplash.com/photo-1622286342621-4bd786c2447c?w=600&h=800&fit=crop"} 
+      <section id="timetable" className="py-10 md:py-16 px-4 sm:px-6">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-6">
+            <h2 className="text-2xl font-semibold mb-3">{t("team")}</h2>
+            <p className="text-zinc-600 mb-4">Tap a barber photo to start booking with them.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {(barbers ?? []).filter((b) => b.role === "barber" && b.isAvailable !== false).map((barber) => (
+                <button
+                  key={barber.id}
+                  type="button"
+                  onClick={() => setConfirmBarberId(barber.id)}
+                  className="group rounded-lg border border-zinc-200 p-3 bg-zinc-50 text-left hover:bg-zinc-100 transition"
+                >
+                  <img
+                    src={barber.photoUrl || "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=400&q=80"}
                     alt={`${barber.firstName} ${barber.lastName}`}
-                    className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500 scale-105 group-hover:scale-100"
+                    className="h-36 w-full rounded-md object-cover mb-2"
                   />
-                </div>
-                <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/40 to-transparent flex flex-col justify-end p-6">
-                  <h3 className="text-2xl font-display font-bold text-white group-hover:text-amber-500 transition-colors">{barber.firstName} {barber.lastName}</h3>
-                  <p className="text-amber-500/80 font-medium">{barber.yearsOfExperience} Years Experience</p>
-                  <p className="mt-2 text-zinc-400 text-sm line-clamp-2">{barber.bio || "Master barber specializing in classic cuts, hot towel shaves, and modern fades."}</p>
-                </div>
-              </div>
-            ))}
-            
-            {/* Fallback mock cards if no barbers from API */}
-            {(!barbers || barbers.length === 0) && (
-              <>
-                <div className="group relative overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
-                  <div className="aspect-[4/5] bg-zinc-800 animate-pulse"></div>
-                  <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 p-6 flex flex-col justify-end">
-                    <div className="h-6 w-32 bg-zinc-800 rounded mb-2"></div>
-                    <div className="h-4 w-24 bg-zinc-800 rounded"></div>
+                  <p className="font-semibold">{barber.firstName} {barber.lastName}</p>
+                  <p className="text-xs text-zinc-500">{t("reserveWith")} {barber.firstName}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div id="branches" className="rounded-2xl border border-zinc-200 bg-white p-6">
+            <h2 className="text-2xl font-semibold mb-3">{t("branches")}</h2>
+            <p className="text-zinc-600 mb-4">Each branch shows its barbers separately.</p>
+            <div className="space-y-4">
+              {barbersByBranch.map((branch) => (
+                <div key={branch.id} className="rounded-lg border border-zinc-200 p-4">
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(branch.location)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-start gap-3 hover:opacity-80"
+                  >
+                    <MapPin className="w-5 h-5 text-amber-700 mt-0.5" />
+                    <div>
+                      <p className="font-semibold">Branch {branch.name}</p>
+                      <p className="text-zinc-600 text-sm">{branch.location}</p>
+                    </div>
+                  </a>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {branch.barbers.length ? branch.barbers.map((b) => (
+                      <p key={b.id} className="text-sm text-zinc-700">
+                        - {b.firstName} {b.lastName}
+                      </p>
+                    )) : <span className="text-xs text-zinc-500">No barbers assigned.</span>}
                   </div>
                 </div>
-              </>
-            )}
+              ))}
+            </div>
           </div>
         </div>
       </section>
+
+      {!barbers && (
+        <div className="container">
+          <div className="pole">
+            <div className="head" />
+            <div className="head-base" />
+            <div className="loader-head" />
+            <div className="loader">
+              <div className="inset">
+                <div className="red" />
+                <div className="blue" />
+                <div className="red" />
+                <div className="blue" />
+                <div className="red" />
+                <div className="blue" />
+              </div>
+            </div>
+            <div className="loader-base" />
+            <div className="base" />
+            <div className="head-2" />
+          </div>
+        </div>
+      )}
+
+      {confirmBarberId && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl p-6 max-w-sm w-full">
+            <p className="font-semibold mb-2">{t("confirmReserve")}</p>
+            <p className="text-sm text-zinc-600 mb-5">
+              {t("reserveWith")} {barberById.get(confirmBarberId)?.firstName} {barberById.get(confirmBarberId)?.lastName}
+            </p>
+            <div className="flex gap-3">
+              <Button className="w-full" onClick={() => { setSelectedBarberId(confirmBarberId); setConfirmBarberId(null); window.scrollTo({ top: 0, behavior: "smooth" }); }}>
+                {t("yes")}
+              </Button>
+              <Button variant="outline" className="w-full" onClick={() => setConfirmBarberId(null)}>
+                {t("no")}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

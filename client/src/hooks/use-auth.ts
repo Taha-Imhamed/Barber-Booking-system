@@ -53,6 +53,20 @@ export function useAuth() {
     },
   });
 
+  const resendVerificationMutation = useMutation({
+    mutationFn: async (email: string) => {
+      const res = await fetch(api.auth.resendVerification.path, {
+        method: api.auth.resendVerification.method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to resend verification");
+      return data;
+    },
+  });
+
   const logoutMutation = useMutation({
     mutationFn: async () => {
       // Mock logout by clearing state or calling a hypothetical logout endpoint
@@ -69,8 +83,13 @@ export function useAuth() {
     error,
     login: loginMutation.mutateAsync,
     register: registerMutation.mutateAsync,
+    signInWithGoogle: () => {
+      window.location.href = api.auth.google.path;
+    },
+    resendVerificationEmail: resendVerificationMutation.mutateAsync,
     logout: logoutMutation.mutateAsync,
     isLoggingIn: loginMutation.isPending,
     isRegistering: registerMutation.isPending,
+    isResendingVerification: resendVerificationMutation.isPending,
   };
 }

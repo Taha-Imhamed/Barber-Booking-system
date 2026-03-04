@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, type ServiceType } from "@shared/routes";
+import { api, type ServiceType, buildUrl } from "@shared/routes";
 
 export function useServices() {
   return useQuery<ServiceType[]>({
@@ -23,6 +23,25 @@ export function useCreateService() {
         credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to create service");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.services.list.path] });
+    },
+  });
+}
+
+export function useUpdateService() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: Partial<ServiceType> }) => {
+      const res = await fetch(buildUrl(api.services.update.path, { id }), {
+        method: api.services.update.method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to update service");
       return res.json();
     },
     onSuccess: () => {
