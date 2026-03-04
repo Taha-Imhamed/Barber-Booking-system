@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://barber-booking-system.onrender.com/api/:path*"
+      "destination": "https://barber-booking-system-yxf7.onrender.com/api/:path*"
     },
     {
       "source": "/(.*)",
