@@ -1,6 +1,16 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type UserType } from "@shared/routes";
 
+async function readResponseJsonSafe(res: Response) {
+  const text = await res.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 export function useAuth() {
   const queryClient = useQueryClient();
 
@@ -24,10 +34,11 @@ export function useAuth() {
         credentials: "include",
       });
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || "Failed to login");
+        const err = await readResponseJsonSafe(res);
+        throw new Error(String(err?.message ?? `Login failed (${res.status})`));
       }
-      return res.json();
+      const data = await readResponseJsonSafe(res);
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.auth.me.path] });
@@ -43,10 +54,11 @@ export function useAuth() {
         credentials: "include",
       });
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || "Failed to register");
+        const err = await readResponseJsonSafe(res);
+        throw new Error(String(err?.message ?? `Registration failed (${res.status})`));
       }
-      return res.json();
+      const dataOut = await readResponseJsonSafe(res);
+      return dataOut;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.auth.me.path] });
@@ -61,8 +73,8 @@ export function useAuth() {
         body: JSON.stringify({ email }),
         credentials: "include",
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Failed to resend verification");
+      const data = await readResponseJsonSafe(res);
+      if (!res.ok) throw new Error(String(data?.message ?? `Failed to resend verification (${res.status})`));
       return data;
     },
   });

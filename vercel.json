@@ -3,10 +3,10 @@
     {
       "source": "/api/:path*",
       "destination": "https://barber-booking-system-yxf7.onrender.com/api/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
-  ],
-  "routes": [
-    { "handle": "filesystem" },
-    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
