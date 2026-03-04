@@ -10,6 +10,9 @@ import { pool } from "./db";
 const app = express();
 const httpServer = createServer(app);
 
+// Required when running behind reverse proxies (Render/Vercel) so secure cookies work.
+app.set("trust proxy", 1);
+
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
