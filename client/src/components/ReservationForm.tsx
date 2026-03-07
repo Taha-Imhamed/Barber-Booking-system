@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, Scissors, User as UserIcon, Clock, ShieldCheck, CircleAlert } from "lucide-react";
+import { Calendar as CalendarIcon, MapPin, Scissors, User as UserIcon, Clock, ShieldCheck, CircleAlert } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +11,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { useBranches } from "@/hooks/use-branches";
 import { useServices } from "@/hooks/use-services";
 import { useBarbers } from "@/hooks/use-barbers";
 import { useAppointments, useCreateAppointment } from "@/hooks/use-appointments";
@@ -22,6 +23,7 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
   const { user } = useAuth();
   const { t } = useI18n();
 
+  const { data: branches, isLoading: isLoadingBranches } = useBranches();
   const { data: services, isLoading: isLoadingServices } = useServices();
   const { data: barbers, isLoading: isLoadingBarbers } = useBarbers();
   const { data: appointments } = useAppointments();
@@ -29,6 +31,7 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
 
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
+    branchId: "",
     serviceId: "",
     barberId: "",
     appointmentDate: new Date(),
@@ -46,6 +49,7 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const parsedBranchId = Number.parseInt(formData.branchId, 10);
       const parsedServiceId = Number.parseInt(formData.serviceId, 10);
       const parsedBarberId = Number.parseInt(effectiveBarberId, 10);
       const parsedClientId = user?.id == null ? null : Number(user.id);
@@ -53,16 +57,15 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
       const finalDate = new Date(formData.appointmentDate);
       finalDate.setHours(Number.parseInt(hours, 10), Number.parseInt(minutes, 10), 0, 0);
 
-      if (!Number.isFinite(parsedServiceId) || !Number.isFinite(parsedBarberId)) {
-        throw new Error("Please choose service, barber, and time.");
+      if (!Number.isFinite(parsedBranchId) || !Number.isFinite(parsedServiceId) || !Number.isFinite(parsedBarberId)) {
+        throw new Error("Please choose branch, service, barber, and time.");
       }
       if (user && !Number.isFinite(parsedClientId)) {
         throw new Error("Invalid account session. Please sign in again.");
       }
       const barberForBranch = barbers?.find((b) => Number(b.id) === parsedBarberId);
-      const parsedBranchId = Number(barberForBranch?.branchId);
-      if (!Number.isFinite(parsedBranchId)) {
-        throw new Error("Selected barber is not assigned to a branch.");
+      if (barberForBranch?.branchId != null && Number(barberForBranch.branchId) !== parsedBranchId) {
+        throw new Error("Selected barber does not belong to selected branch.");
       }
 
       const payload: Record<string, unknown> = {
@@ -92,6 +95,7 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
       setStep(1);
       setFormData({
         ...formData,
+        branchId: "",
         serviceId: "",
         barberId: "",
         timeSlot: "",
@@ -114,6 +118,7 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
   const barbersForBranch = barbers?.filter((b) => {
     if (b.role !== "barber") return false;
     if (b.isAvailable === false) return false;
+    if (formData.branchId && b.branchId !== Number(formData.branchId)) return false;
     return true;
   });
   const selectedBarber = barbers?.find((b) => Number(b.id) === Number(preselectedBarberId));
@@ -189,6 +194,22 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
           {step === 1 && (
             <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
               <div className="space-y-2">
+                <Label className="flex items-center gap-2 text-zinc-700"><MapPin className="w-4 h-4" /> Branch</Label>
+                <Select value={formData.branchId} onValueChange={(v) => updateForm("branchId", v)}>
+                  <SelectTrigger className="bg-white border-zinc-300">
+                    <SelectValue placeholder={isLoadingBranches ? "Loading..." : "Select branch"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {branches?.map((branch) => (
+                      <SelectItem key={branch.id} value={branch.id.toString()}>
+                        {branch.name} - {branch.location}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
                 <Label className="flex items-center gap-2 text-zinc-700"><Scissors className="w-4 h-4" /> Service</Label>
                 <Select value={formData.serviceId} onValueChange={(v) => updateForm("serviceId", v)}>
                   <SelectTrigger className="bg-white border-zinc-300">
@@ -204,7 +225,7 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
                 </Select>
               </div>
 
-              <Button type="button" className="w-full bg-zinc-900 hover:bg-zinc-800 text-white font-semibold mt-4" onClick={() => setStep(2)} disabled={!formData.serviceId}>
+              <Button type="button" className="w-full bg-zinc-900 hover:bg-zinc-800 text-white font-semibold mt-4" onClick={() => setStep(2)} disabled={!formData.branchId || !formData.serviceId}>
                 Continue
               </Button>
               {!user && (

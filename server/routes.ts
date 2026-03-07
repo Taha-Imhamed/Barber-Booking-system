@@ -611,7 +611,9 @@ export async function registerRoutes(
           `Address: ${salonAddress}`,
         ].join("\n");
 
-        void sendEmail(toEmail, subject, fallbackText, {
+        const emailResult = await sendEmail(toEmail, subject, fallbackText, {
+          email: toEmail,
+          client_email: toEmail,
           client_name: clientName,
           service_name: selectedService.name,
           barber_name: barberName,
@@ -621,6 +623,13 @@ export async function registerRoutes(
           salon_phone: salonPhone,
           salon_address: salonAddress,
         });
+        if (!emailResult.sent) {
+          console.warn("[appointments.create] reservation email failed", {
+            toEmail,
+            provider: emailResult.provider,
+            error: emailResult.error,
+          });
+        }
       }
 
       res.status(201).json(appointment);
