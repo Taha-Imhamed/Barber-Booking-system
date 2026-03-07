@@ -490,6 +490,7 @@ export async function registerRoutes(
 
   app.post(api.appointments.create.path, async (req, res) => {
     try {
+      console.log("[appointments.create] request received");
       const numericClientId = req.body.clientId == null || req.body.clientId === "" ? undefined : Number(req.body.clientId);
       const numericBarberId = Number(req.body.barberId);
       const numericServiceId = Number(req.body.serviceId);
@@ -629,7 +630,14 @@ export async function registerRoutes(
             provider: emailResult.provider,
             error: emailResult.error,
           });
+        } else {
+          console.log("[appointments.create] reservation email sent", {
+            toEmail,
+            provider: emailResult.provider,
+          });
         }
+      } else {
+        console.warn("[appointments.create] no recipient email on reservation");
       }
 
       res.status(201).json(appointment);
