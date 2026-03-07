@@ -6,7 +6,6 @@ import { CalendarClock, ShieldCheck, Gift, MapPin } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
-import { MiniGame } from "@/components/MiniGame";
 
 const HERO_BG =
   "https://static.vecteezy.com/ti/photos-gratuite/t2/65578350-cette-bien-equipe-salon-de-coiffure-caracteristiques-une-tondeuse-en-train-de-preparer-pour-barbe-toilettage-seances-photo.jpg";
@@ -127,12 +126,6 @@ export default function Landing() {
               ))}
             </div>
           </div>
-        </div>
-      </section>
-
-      <section className="px-4 sm:px-6 pb-12">
-        <div className="max-w-5xl mx-auto">
-          <MiniGame />
         </div>
       </section>
 

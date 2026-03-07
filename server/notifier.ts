@@ -64,6 +64,40 @@ async function sendViaResend(to: string, subject: string, text: string): Promise
   return { sent: true, provider: "resend" };
 }
 
+async function sendViaEmailJs(to: string, subject: string, text: string): Promise<NotifyResult> {
+  const serviceId = process.env.EMAILJS_SERVICE_ID || process.env.VITE_EMAILJS_SERVICE_ID;
+  const templateId = process.env.EMAILJS_TEMPLATE_ID || process.env.VITE_EMAILJS_TEMPLATE_ID;
+  const publicKey = process.env.EMAILJS_PUBLIC_KEY || process.env.VITE_EMAILJS_PUBLIC_KEY;
+  if (!serviceId || !templateId || !publicKey) {
+    return { sent: false, provider: "emailjs", error: "Missing EmailJS config" };
+  }
+
+  const response = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      service_id: serviceId,
+      template_id: templateId,
+      user_id: publicKey,
+      template_params: {
+        to_email: to,
+        to_name: to.split("@")[0] || "Client",
+        user_email: to,
+        subject,
+        title: subject,
+        message: text,
+        content: text,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const details = await response.text().catch(() => "");
+    return { sent: false, provider: "emailjs", error: `HTTP ${response.status}${details ? `: ${details}` : ""}` };
+  }
+  return { sent: true, provider: "emailjs" };
+}
+
 export async function sendEmail(to: string, subject: string, text: string): Promise<NotifyResult> {
   if (!to) return { sent: false, provider: "none", error: "No recipient email" };
 
@@ -72,6 +106,9 @@ export async function sendEmail(to: string, subject: string, text: string): Prom
   }
   if (process.env.RESEND_API_KEY) {
     return sendViaResend(to, subject, text);
+  }
+  if (process.env.EMAILJS_SERVICE_ID || process.env.VITE_EMAILJS_SERVICE_ID) {
+    return sendViaEmailJs(to, subject, text);
   }
 
   console.log("[email:console]", { to, subject, text });
@@ -113,4 +150,3 @@ export async function sendAppointmentUpdateNotification(
   ]);
   return { email, sms };
 }
-

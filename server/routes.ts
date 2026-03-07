@@ -221,13 +221,13 @@ export async function registerRoutes(
   app.get(api.auth.me.path, async (req, res) => {
     const userId = req.session.userId;
     if (!userId) {
-      return res.status(401).json({ message: "Not logged in" });
+      return res.json(null);
     }
 
     const user = await storage.getUser(userId);
     if (!user) {
       req.session.destroy(() => {});
-      return res.status(401).json({ message: "Not logged in" });
+      return res.json(null);
     }
 
     res.json(user);
@@ -711,14 +711,18 @@ export async function registerRoutes(
         }
       }
 
-      if (appointmentBeforeUpdate?.guestPhone || appointmentBeforeUpdate?.guestEmail) {
+      const appointmentClient = appointment.clientId ? await storage.getUser(appointment.clientId) : undefined;
+      const notifyEmail = appointment.guestEmail ?? appointmentBeforeUpdate?.guestEmail ?? appointmentClient?.email ?? null;
+      const notifyPhone = appointment.guestPhone ?? appointmentBeforeUpdate?.guestPhone ?? appointmentClient?.phone ?? null;
+
+      if (notifyPhone || notifyEmail) {
         await sendAppointmentUpdateNotification({
-          email: appointmentBeforeUpdate.guestEmail,
-          phone: appointmentBeforeUpdate.guestPhone,
+          email: notifyEmail,
+          phone: notifyPhone,
           subject: "Appointment status update",
           message: statusMessage,
         });
-      }      
+      }
 
       res.json(appointment);
     } catch {

@@ -17,7 +17,6 @@ import { useBarbers } from "@/hooks/use-barbers";
 import { useAppointments, useCreateAppointment } from "@/hooks/use-appointments";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
-import { sendReservationConfirmationEmail } from "@/lib/emailjs";
 
 export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?: number | null }) {
   const { toast } = useToast();
@@ -83,29 +82,6 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
       }
 
       await createAppointment.mutateAsync(payload);
-
-      const emailTarget = (user?.email ?? formData.guestEmail ?? "").trim();
-      if (emailTarget) {
-        const branch = branches?.find((b) => Number(b.id) === parsedBranchId);
-        const service = services?.find((s) => Number(s.id) === parsedServiceId);
-        const barber = barbers?.find((b) => Number(b.id) === parsedBarberId);
-        const fullName = user
-          ? `${user.firstName} ${user.lastName}`.trim()
-          : `${formData.guestFirstName} ${formData.guestLastName}`.trim();
-
-        try {
-          await sendReservationConfirmationEmail({
-            toEmail: emailTarget,
-            toName: fullName || "Client",
-            barberName: barber ? `${barber.firstName} ${barber.lastName}` : `#${parsedBarberId}`,
-            serviceName: service?.name ?? `#${parsedServiceId}`,
-            appointmentDateTime: format(finalDate, "PPP p"),
-            branchName: branch?.name ?? `#${parsedBranchId}`,
-          });
-        } catch {
-          // Reservation should still succeed even if third-party email sending fails.
-        }
-      }
 
       toast({
         title: "Reservation submitted",
