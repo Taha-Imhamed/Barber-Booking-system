@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { format } from "date-fns";
+import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,6 +12,7 @@ export default function GuestCheck() {
   const { toast } = useToast();
   const [phoneInput, setPhoneInput] = useState("");
   const [phone, setPhone] = useState("");
+  const [openedMessage, setOpenedMessage] = useState<string>("");
   const { data: appointments } = useGuestAppointments(phone);
   const { data: notifications } = useGuestNotifications(phone);
   const respond = useRespondProposedTime();
@@ -26,11 +28,21 @@ export default function GuestCheck() {
               <Input value={phoneInput} onChange={(e) => setPhoneInput(e.target.value)} placeholder="Enter your phone number" />
               <Button onClick={() => setPhone(phoneInput.trim())} disabled={!phoneInput.trim()}>Check</Button>
             </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Link href="/auth"><Button size="sm" variant="outline">Login</Button></Link>
+              <Link href="/"><Button size="sm" variant="outline">Back To Booking</Button></Link>
+            </div>
           </CardContent>
         </Card>
 
         {phone ? (
           <>
+            {openedMessage && (
+              <Card className="border-orange-300 bg-orange-50 dark:bg-zinc-900 dark:border-orange-500/60">
+                <CardHeader><CardTitle className="text-base">Opened Message</CardTitle></CardHeader>
+                <CardContent><p>{openedMessage}</p></CardContent>
+              </Card>
+            )}
             <Card>
               <CardHeader><CardTitle>Notifications</CardTitle></CardHeader>
               <CardContent className="space-y-3">
@@ -41,9 +53,16 @@ export default function GuestCheck() {
                       <p className="font-medium">{n.message}</p>
                       <p className="text-xs text-zinc-500">{format(new Date(n.createdAt || new Date()), "PPP p")}</p>
                     </div>
-                    {!n.isRead && (
-                      <Button size="sm" variant="outline" onClick={() => markRead.mutate(n.id)}>Read</Button>
-                    )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setOpenedMessage(n.message);
+                        if (!n.isRead) markRead.mutate(n.id);
+                      }}
+                    >
+                      {n.isRead ? "Open Message" : "Read Message"}
+                    </Button>
                   </div>
                 ))}
               </CardContent>
@@ -58,7 +77,7 @@ export default function GuestCheck() {
                     <p className="font-semibold">#{apt.id} - {format(new Date(apt.appointmentDate), "PPP p")}</p>
                     <p className="text-sm uppercase text-zinc-600">Status: {apt.status}</p>
                     {apt.status === "postponed" && apt.proposedStatus === "pending_client" && apt.proposedDate && (
-                      <div className="bg-amber-50 border border-amber-200 rounded-md p-3">
+                      <div className="postpone-panel rounded-md p-3">
                         <p className="text-sm mb-2">New proposed time: {format(new Date(apt.proposedDate), "PPP p")}</p>
                         <div className="flex gap-2">
                           <Button
@@ -101,4 +120,3 @@ export default function GuestCheck() {
     </div>
   );
 }
-

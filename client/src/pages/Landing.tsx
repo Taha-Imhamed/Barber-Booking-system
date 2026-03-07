@@ -6,6 +6,7 @@ import { CalendarClock, ShieldCheck, Gift, MapPin } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
+import { MiniGame } from "@/components/MiniGame";
 
 const HERO_BG =
   "https://static.vecteezy.com/ti/photos-gratuite/t2/65578350-cette-bien-equipe-salon-de-coiffure-caracteristiques-une-tondeuse-en-train-de-preparer-pour-barbe-toilettage-seances-photo.jpg";
@@ -34,7 +35,7 @@ export default function Landing() {
         </div>
 
         <div className="max-w-7xl mx-auto grid lg:grid-cols-[1.1fr_1fr] gap-10 items-start relative z-10">
-          <div className="order-2 lg:order-1 space-y-6 text-white">
+          <div className="order-2 lg:order-1 space-y-6 text-white fade-rise">
             <div className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-black/20 px-4 py-2 text-xs font-semibold uppercase tracking-wider">
               Priority booking available for signed-in clients
             </div>
@@ -49,17 +50,17 @@ export default function Landing() {
               Pick branch, barber, service, date, and time in under a minute. Sign up as client to save history and loyalty points.
             </p>
             <div className="grid sm:grid-cols-3 gap-3">
-              <div className="rounded-xl border border-white/20 bg-black/25 p-4">
+              <div className="rounded-xl border border-white/20 bg-black/25 p-4 fade-rise">
                 <CalendarClock className="w-5 h-5 text-amber-300 mb-2" />
                 <p className="font-semibold">Real-time approval</p>
                 <p className="text-sm text-zinc-200">Barbers accept, reject, or postpone requests.</p>
               </div>
-              <div className="rounded-xl border border-white/20 bg-black/25 p-4">
+              <div className="rounded-xl border border-white/20 bg-black/25 p-4 fade-rise">
                 <ShieldCheck className="w-5 h-5 text-amber-300 mb-2" />
                 <p className="font-semibold">Priority system</p>
                 <p className="text-sm text-zinc-200">Registered users are prioritized.</p>
               </div>
-              <div className="rounded-xl border border-white/20 bg-black/25 p-4">
+              <div className="rounded-xl border border-white/20 bg-black/25 p-4 fade-rise">
                 <Gift className="w-5 h-5 text-amber-300 mb-2" />
                 <p className="font-semibold">Loyalty rewards</p>
                 <p className="text-sm text-zinc-200">Earn points and unlock discounts.</p>
@@ -126,6 +127,12 @@ export default function Landing() {
               ))}
             </div>
           </div>
+        </div>
+      </section>
+
+      <section className="px-4 sm:px-6 pb-12">
+        <div className="max-w-5xl mx-auto">
+          <MiniGame />
         </div>
       </section>
 

@@ -26,8 +26,7 @@ export function useMarkGuestNotificationRead() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [api.guestNotifications.list.path] });
+      queryClient.invalidateQueries({ queryKey: [api.guestNotifications.list.path], exact: false });
     },
   });
 }
-

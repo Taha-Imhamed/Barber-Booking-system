@@ -102,8 +102,8 @@ export function Navbar() {
                 </Button>
               </div>
             ) : (
-              <Link href="/auth" className="hidden md:block">
-                <Button className="bg-zinc-900 hover:bg-zinc-800 text-white font-semibold px-6">
+              <Link href="/auth">
+                <Button className="bg-zinc-900 hover:bg-zinc-800 text-white font-semibold px-4 sm:px-6">
                   <LogIn className="w-4 h-4 mr-2" /> {t("signIn")}
                 </Button>
               </Link>

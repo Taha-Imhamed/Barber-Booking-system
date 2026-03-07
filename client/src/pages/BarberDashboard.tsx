@@ -143,6 +143,13 @@ export default function BarberDashboard() {
   const timeSlots = ["09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00"];
 
   const getServiceName = (id: number) => services?.find((s) => s.id === id)?.name || "Service";
+  const statusChipClass = (status: string) => {
+    if (status === "accepted") return "status-chip status-chip--accepted";
+    if (status === "rejected") return "status-chip status-chip--rejected";
+    if (status === "completed") return "status-chip status-chip--completed";
+    if (status === "postponed") return "status-chip status-chip--postponed";
+    return "status-chip status-chip--pending";
+  };
 
   const loadGroups = async () => {
     const res = await fetch(api.chat.groups.path, { credentials: "include" });
@@ -360,7 +367,7 @@ export default function BarberDashboard() {
                     </div>
                   </CardContent>
                   <CardFooter className="grid grid-cols-3 gap-2 pt-0">
-                    <Button onClick={() => handleStatusChange(apt.id, "accepted")} className="bg-green-600 hover:bg-green-700 text-white w-full" disabled={updateStatus.isPending}>
+                    <Button onClick={() => handleStatusChange(apt.id, "accepted")} className="bg-emerald-700 hover:bg-emerald-800 text-white w-full" disabled={updateStatus.isPending}>
                       <CheckCircle className="w-4 h-4 mr-1" /> Accept
                     </Button>
                     <Button
@@ -371,12 +378,12 @@ export default function BarberDashboard() {
                         const iso = new Date(input).toISOString();
                         void handleStatusChange(apt.id, "postponed", { proposedDate: iso });
                       }}
-                      className="border-slate-400 text-slate-700 hover:bg-slate-100 w-full"
+                      className="border-orange-500 text-orange-700 hover:bg-orange-50 dark:hover:bg-orange-950/40 w-full"
                       disabled={updateStatus.isPending}
                     >
                       Postpone
                     </Button>
-                    <Button variant="outline" onClick={() => handleStatusChange(apt.id, "rejected")} className="border-red-500 text-red-600 hover:bg-red-50 w-full" disabled={updateStatus.isPending}>
+                    <Button variant="outline" onClick={() => handleStatusChange(apt.id, "rejected")} className="border-rose-600 text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 w-full" disabled={updateStatus.isPending}>
                       <XCircle className="w-4 h-4 mr-1" /> Reject
                     </Button>
                   </CardFooter>
@@ -401,7 +408,8 @@ export default function BarberDashboard() {
                 <div key={`upcoming-${apt.id}`} className="border border-slate-200 rounded-lg p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                   <div>
                     <p className="font-semibold">{apt.guestFirstName ? `${apt.guestFirstName} ${apt.guestLastName ?? ""}` : "Registered Client"}</p>
-                    <p className="text-sm text-slate-500">{format(new Date(apt.appointmentDate), "PPP p")} ({apt.status})</p>
+                    <p className="text-sm text-slate-500">{format(new Date(apt.appointmentDate), "PPP p")}</p>
+                    <span className={statusChipClass(apt.status)}>{apt.status}</span>
                   </div>
                   <p className="text-sm font-medium text-slate-700">{hours}h {mins}m left</p>
                 </div>
@@ -467,7 +475,7 @@ export default function BarberDashboard() {
                     <TableCell>{format(new Date(apt.appointmentDate), "PPP p")}</TableCell>
                     <TableCell>{apt.guestFirstName ? `${apt.guestFirstName} ${apt.guestLastName ?? ""}` : "Registered Client"}</TableCell>
                     <TableCell>{getServiceName(apt.serviceId)}</TableCell>
-                    <TableCell className="capitalize">{apt.status}</TableCell>
+                    <TableCell><span className={statusChipClass(apt.status)}>{apt.status}</span></TableCell>
                   </TableRow>
                 ))}
               </TableBody>

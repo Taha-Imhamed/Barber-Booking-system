@@ -144,6 +144,13 @@ export default function AdminDashboard() {
     pending: activeAppointments.length,
     completed: normalizedAppointments.filter((a) => a.status === "completed").length,
   };
+  const statusChipClass = (status: string) => {
+    if (status === "accepted") return "status-chip status-chip--accepted";
+    if (status === "rejected") return "status-chip status-chip--rejected";
+    if (status === "completed") return "status-chip status-chip--completed";
+    if (status === "postponed") return "status-chip status-chip--postponed";
+    return "status-chip status-chip--pending";
+  };
   const scheduleRows = [...normalizedAppointments].sort(
     (a, b) => new Date(a.appointmentDate).getTime() - new Date(b.appointmentDate).getTime(),
   );
@@ -554,6 +561,8 @@ export default function AdminDashboard() {
                         id: a.id,
                         dateTime: format(new Date(a.appointmentDate), "yyyy-MM-dd HH:mm"),
                         client: a.guestFirstName ? `${a.guestFirstName} ${a.guestLastName ?? ""}` : "Registered Client",
+                        phone: a.guestPhone ?? "",
+                        email: a.guestEmail ?? "",
                         barber: barberById.get(Number(a.barberId))?.firstName ?? a.barberId,
                         status: a.status,
                       })),
@@ -592,6 +601,8 @@ export default function AdminDashboard() {
                   <TableRow className="hover:bg-transparent">
                     <TableHead>Date/Time</TableHead>
                     <TableHead>Client</TableHead>
+                    <TableHead>Phone</TableHead>
+                    <TableHead>Email</TableHead>
                     <TableHead>Barber</TableHead>
                     <TableHead>Branch</TableHead>
                     <TableHead>Status</TableHead>
@@ -603,18 +614,20 @@ export default function AdminDashboard() {
                     <TableRow key={apt.id}>
                       <TableCell className="font-medium">{format(new Date(apt.appointmentDate), "MMM do, HH:mm")}</TableCell>
                       <TableCell>{apt.guestFirstName ? `${apt.guestFirstName} ${apt.guestLastName ?? ""}` : "Registered Client"}</TableCell>
+                      <TableCell>{apt.guestPhone || "-"}</TableCell>
+                      <TableCell>{apt.guestEmail || "-"}</TableCell>
                       <TableCell>{barberById.get(Number(apt.barberId))?.firstName ?? `#${apt.barberId}`}</TableCell>
                       <TableCell>{branchById.get(Number(apt.branchId))?.name ?? `#${apt.branchId}`}</TableCell>
-                      <TableCell className="capitalize">{apt.status}</TableCell>
+                      <TableCell><span className={statusChipClass(apt.status)}>{apt.status}</span></TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-2">
-                          <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white" onClick={() => handleStatus(apt.id, "accepted")} disabled={updateStatus.isPending}>
+                          <Button size="sm" className="bg-emerald-700 hover:bg-emerald-800 text-white" onClick={() => handleStatus(apt.id, "accepted")} disabled={updateStatus.isPending}>
                             <CheckCircle2 className="h-3 w-3 mr-1" /> Accept
                           </Button>
                           <Button
                             size="sm"
                             variant="outline"
-                            className="border-amber-400 text-amber-700 hover:bg-amber-50"
+                            className="border-orange-500 text-orange-700 hover:bg-orange-50 dark:hover:bg-orange-950/40"
                             onClick={() => {
                               const input = window.prompt("Pick new date/time (YYYY-MM-DDTHH:mm)", format(new Date(apt.appointmentDate), "yyyy-MM-dd'T'HH:mm"));
                               if (!input) return;
@@ -630,7 +643,7 @@ export default function AdminDashboard() {
                           <Button
                             size="sm"
                             variant="outline"
-                            className="border-sky-500 text-sky-700 hover:bg-sky-50"
+                            className="border-cyan-600 text-cyan-700 hover:bg-cyan-50 dark:hover:bg-cyan-950/40"
                             onClick={() => setSelectedAppointment(apt)}
                           >
                             <MessageSquareText className="h-3 w-3 mr-1" /> Contact
@@ -653,6 +666,8 @@ export default function AdminDashboard() {
                     <TableHead>Select</TableHead>
                     <TableHead>Date/Time</TableHead>
                     <TableHead>Client</TableHead>
+                    <TableHead>Phone</TableHead>
+                    <TableHead>Email</TableHead>
                     <TableHead>Barber</TableHead>
                     <TableHead>Status</TableHead>
                   </TableRow>
@@ -676,8 +691,10 @@ export default function AdminDashboard() {
                       </TableCell>
                       <TableCell>{format(new Date(apt.appointmentDate), "MMM do, HH:mm")}</TableCell>
                       <TableCell>{apt.guestFirstName ? `${apt.guestFirstName} ${apt.guestLastName ?? ""}` : "Registered Client"}</TableCell>
+                      <TableCell>{apt.guestPhone || "-"}</TableCell>
+                      <TableCell>{apt.guestEmail || "-"}</TableCell>
                       <TableCell>{barberById.get(Number(apt.barberId))?.firstName ?? `#${apt.barberId}`}</TableCell>
-                      <TableCell className="capitalize">{apt.status}</TableCell>
+                      <TableCell><span className={statusChipClass(apt.status)}>{apt.status}</span></TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

@@ -18,6 +18,7 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   const loyaltyPointsPerCompletedVisit = 10;
+  const minimumBarberLockMinutes = 120;
   const appBaseUrl = process.env.APP_BASE_URL || "http://localhost:5000";
   const defaultGoogleClientId = "519299194836-q7bvbn0jlonm6u47crap9lfhcg6835m0.apps.googleusercontent.com";
 
@@ -55,14 +56,8 @@ export async function registerRoutes(
     return `${hh}:${mm}`;
   }
 
-  function isSameSlot(a: Date, b: Date) {
-    return (
-      a.getFullYear() === b.getFullYear() &&
-      a.getMonth() === b.getMonth() &&
-      a.getDate() === b.getDate() &&
-      a.getHours() === b.getHours() &&
-      a.getMinutes() === b.getMinutes()
-    );
+  function isOverlapping(startA: Date, endA: Date, startB: Date, endB: Date) {
+    return startA.getTime() < endB.getTime() && endA.getTime() > startB.getTime();
   }
 
   function normalizePhone(phone: string) {
@@ -509,6 +504,13 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Phone number is required for guest reservations." });
       }
 
+      const allServices = await storage.getServices();
+      const serviceById = new Map(allServices.map((s) => [Number(s.id), s]));
+      const selectedService = serviceById.get(Number(input.serviceId));
+      if (!selectedService) {
+        return res.status(400).json({ message: "Invalid service." });
+      }
+
       const barber = await storage.getUser(input.barberId);
       if (!barber || barber.role !== "barber") {
         return res.status(400).json({ message: "Invalid barber." });
@@ -531,20 +533,35 @@ export async function registerRoutes(
       }
 
       const barberAppointments = await storage.getAppointmentsByBarber(input.barberId);
-      const acceptedConflict = barberAppointments.find((a) => {
-        if (a.status !== "accepted") return false;
-        return isSameSlot(new Date(a.appointmentDate), new Date(input.appointmentDate));
+      const requestedStart = new Date(input.appointmentDate);
+      const requestedLockMinutes = Math.max(selectedService.durationMinutes, minimumBarberLockMinutes);
+      const requestedEnd = new Date(requestedStart.getTime() + requestedLockMinutes * 60 * 1000);
+      const blockedStatuses = new Set(["pending", "accepted", "postponed"]);
+      const overlappingAppointment = barberAppointments.find((a) => {
+        if (!blockedStatuses.has(a.status)) return false;
+        const existingService = serviceById.get(Number(a.serviceId));
+        if (!existingService) return false;
+        const existingStart =
+          a.status === "postponed" && a.proposedStatus === "pending_client" && a.proposedDate
+            ? new Date(a.proposedDate)
+            : new Date(a.appointmentDate);
+        const existingLockMinutes = Math.max(existingService.durationMinutes, minimumBarberLockMinutes);
+        const existingEnd = new Date(existingStart.getTime() + existingLockMinutes * 60 * 1000);
+        return isOverlapping(existingStart, existingEnd, requestedStart, requestedEnd);
       });
-      if (acceptedConflict) {
-        return res.status(409).json({ message: "This slot is already taken for this barber." });
+      if (overlappingAppointment) {
+        return res.status(409).json({
+          message: "This barber is already reserved for at least 2 hours, or until the current cut is marked completed.",
+        });
       }
 
+      const clientUser = input.clientId ? await storage.getUser(input.clientId) : undefined;
       const appointment = await storage.createAppointment({
         clientId: input.clientId ?? null,
-        guestFirstName: input.guestFirstName ?? null,
-        guestLastName: input.guestLastName ?? null,
-        guestPhone: input.guestPhone ? normalizePhone(input.guestPhone) : null,
-        guestEmail: input.guestEmail ?? null,
+        guestFirstName: input.guestFirstName ?? clientUser?.firstName ?? null,
+        guestLastName: input.guestLastName ?? clientUser?.lastName ?? null,
+        guestPhone: input.guestPhone ? normalizePhone(input.guestPhone) : clientUser?.phone ? normalizePhone(clientUser.phone) : null,
+        guestEmail: input.guestEmail ?? clientUser?.email ?? null,
         barberId: input.barberId,
         serviceId: input.serviceId,
         branchId: input.branchId,
@@ -558,7 +575,7 @@ export async function registerRoutes(
 
       await storage.createNotification({
         userId: input.barberId,
-        message: `New appointment requested by ${input.guestFirstName || "a client"} for ${new Date(input.appointmentDate).toLocaleString()}`,
+        message: `New appointment requested by ${input.guestFirstName || clientUser?.firstName || "a client"} for ${new Date(input.appointmentDate).toLocaleString()}`,
         isRead: false,
       });
 
@@ -581,11 +598,34 @@ export async function registerRoutes(
       let appointment = appointmentBeforeUpdate;
       const actorId = req.session.userId;
       const actor = actorId ? await storage.getUser(actorId) : undefined;
+      const allServices = await storage.getServices();
+      const serviceById = new Map(allServices.map((s) => [Number(s.id), s]));
+      const currentService = serviceById.get(Number(appointmentBeforeUpdate.serviceId));
+      const currentLockMinutes = Math.max(currentService?.durationMinutes ?? 30, minimumBarberLockMinutes);
+      const barberAppointments = await storage.getAppointmentsByBarber(appointmentBeforeUpdate.barberId);
+      const blockedStatuses = new Set(["pending", "accepted", "postponed"]);
 
       if (status === "postponed") {
         if (!proposedDate) return res.status(400).json({ message: "Please pick the new date/time." });
         const nextDate = new Date(proposedDate);
         if (Number.isNaN(nextDate.getTime())) return res.status(400).json({ message: "Invalid proposed date." });
+        const nextEnd = new Date(nextDate.getTime() + currentLockMinutes * 60 * 1000);
+        const conflict = barberAppointments.find((a) => {
+          if (a.id === appointmentBeforeUpdate.id) return false;
+          if (!blockedStatuses.has(a.status)) return false;
+          const existingService = serviceById.get(Number(a.serviceId));
+          if (!existingService) return false;
+          const existingStart =
+            a.status === "postponed" && a.proposedStatus === "pending_client" && a.proposedDate
+              ? new Date(a.proposedDate)
+              : new Date(a.appointmentDate);
+          const existingLockMinutes = Math.max(existingService.durationMinutes, minimumBarberLockMinutes);
+          const existingEnd = new Date(existingStart.getTime() + existingLockMinutes * 60 * 1000);
+          return isOverlapping(existingStart, existingEnd, nextDate, nextEnd);
+        });
+        if (conflict) {
+          return res.status(409).json({ message: "The proposed postpone time overlaps with another active reservation for this barber." });
+        }
         appointment = await storage.updateAppointment(id, {
           status: "postponed",
           proposedDate: nextDate,
@@ -593,6 +633,26 @@ export async function registerRoutes(
           proposedStatus: "pending_client",
         });
       } else {
+        if (status === "accepted") {
+          const nextStart = new Date(appointmentBeforeUpdate.appointmentDate);
+          const nextEnd = new Date(nextStart.getTime() + currentLockMinutes * 60 * 1000);
+          const conflict = barberAppointments.find((a) => {
+            if (a.id === appointmentBeforeUpdate.id) return false;
+            if (!blockedStatuses.has(a.status)) return false;
+            const existingService = serviceById.get(Number(a.serviceId));
+            if (!existingService) return false;
+            const existingStart =
+              a.status === "postponed" && a.proposedStatus === "pending_client" && a.proposedDate
+                ? new Date(a.proposedDate)
+                : new Date(a.appointmentDate);
+            const existingLockMinutes = Math.max(existingService.durationMinutes, minimumBarberLockMinutes);
+            const existingEnd = new Date(existingStart.getTime() + existingLockMinutes * 60 * 1000);
+            return isOverlapping(existingStart, existingEnd, nextStart, nextEnd);
+          });
+          if (conflict) {
+            return res.status(409).json({ message: "Cannot accept this appointment because it overlaps another active reservation." });
+          }
+        }
         appointment = await storage.updateAppointment(id, {
           status,
           proposedStatus: status === "accepted" || status === "completed" ? "none" : appointmentBeforeUpdate.proposedStatus,
@@ -601,10 +661,15 @@ export async function registerRoutes(
         });
       }
 
+      const statusMessage =
+        status === "postponed" && appointment.proposedDate
+          ? `Your appointment was postponed to ${new Date(appointment.proposedDate).toLocaleString()}. Open check page to accept or request another time.`
+          : `Your appointment on ${new Date(appointment.appointmentDate).toLocaleString()} is now ${status}.`;
+
       if (appointment.clientId) {
         await storage.createNotification({
           userId: appointment.clientId,
-          message: `Your appointment on ${new Date(appointment.appointmentDate).toLocaleString()} was ${status}.`,
+          message: statusMessage,
           isRead: false,
         });
 
@@ -618,15 +683,11 @@ export async function registerRoutes(
         }
       }
 
-      if (!appointment.clientId && appointment.guestPhone) {
-        const guestMsg =
-          status === "postponed" && appointment.proposedDate
-            ? `Your appointment was postponed to ${new Date(appointment.proposedDate).toLocaleString()}. Open check page to accept or request another time.`
-            : `Your appointment on ${new Date(appointment.appointmentDate).toLocaleString()} is now ${status}.`;
+      if (appointment.guestPhone) {
         await storage.createGuestNotification({
           guestPhone: appointment.guestPhone,
           appointmentId: appointment.id,
-          message: guestMsg,
+          message: statusMessage,
           isRead: false,
         });
       }
@@ -655,7 +716,7 @@ export async function registerRoutes(
           email: appointmentBeforeUpdate.guestEmail,
           phone: appointmentBeforeUpdate.guestPhone,
           subject: "Appointment status update",
-          message: `Your appointment on ${new Date(appointment.appointmentDate).toLocaleString()} is now ${status}.`,
+          message: statusMessage,
         });
       }      
 
@@ -680,6 +741,33 @@ export async function registerRoutes(
       if (!appointment) return res.status(404).json({ message: "Appointment not found" });
       if (appointment.status !== "postponed" || appointment.proposedStatus !== "pending_client" || !appointment.proposedDate) {
         return res.status(400).json({ message: "No pending proposed time for this appointment." });
+      }
+
+      if (action === "accept") {
+        const allServices = await storage.getServices();
+        const serviceById = new Map(allServices.map((s) => [Number(s.id), s]));
+        const thisService = serviceById.get(Number(appointment.serviceId));
+        const lockMinutes = Math.max(thisService?.durationMinutes ?? 30, minimumBarberLockMinutes);
+        const nextStart = new Date(appointment.proposedDate);
+        const nextEnd = new Date(nextStart.getTime() + lockMinutes * 60 * 1000);
+        const blockedStatuses = new Set(["pending", "accepted", "postponed"]);
+        const barberAppointments = await storage.getAppointmentsByBarber(appointment.barberId);
+        const conflict = barberAppointments.find((a) => {
+          if (a.id === appointment.id) return false;
+          if (!blockedStatuses.has(a.status)) return false;
+          const existingService = serviceById.get(Number(a.serviceId));
+          if (!existingService) return false;
+          const existingStart =
+            a.status === "postponed" && a.proposedStatus === "pending_client" && a.proposedDate
+              ? new Date(a.proposedDate)
+              : new Date(a.appointmentDate);
+          const existingLockMinutes = Math.max(existingService.durationMinutes, minimumBarberLockMinutes);
+          const existingEnd = new Date(existingStart.getTime() + existingLockMinutes * 60 * 1000);
+          return isOverlapping(existingStart, existingEnd, nextStart, nextEnd);
+        });
+        if (conflict) {
+          return res.status(409).json({ message: "Cannot accept this time because it overlaps another active reservation." });
+        }
       }
 
       const updated =
@@ -797,6 +885,15 @@ export async function registerRoutes(
       if (appointment.clientId) {
         await storage.createNotification({
           userId: appointment.clientId,
+          message: `Admin message: ${input.message}`,
+          isRead: false,
+        });
+      }
+
+      if (appointment.guestPhone) {
+        await storage.createGuestNotification({
+          guestPhone: appointment.guestPhone,
+          appointmentId: appointment.id,
           message: `Admin message: ${input.message}`,
           isRead: false,
         });

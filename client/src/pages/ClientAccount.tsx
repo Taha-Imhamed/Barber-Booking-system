@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
 import { Bell, CalendarClock, Gem, LogOut } from "lucide-react";
@@ -22,6 +22,7 @@ export default function ClientAccount() {
   const respond = useRespondProposedTime();
   const markAllRead = useMarkAllNotificationsRead();
   const markRead = useMarkNotificationRead();
+  const [openedMessage, setOpenedMessage] = useState<string>("");
 
   const barberById = useMemo(() => new Map(barbers?.map((b) => [Number(b.id), `${b.firstName} ${b.lastName}`]) ?? []), [barbers]);
   const serviceById = useMemo(() => new Map(services?.map((s) => [Number(s.id), s.name]) ?? []), [services]);
@@ -90,7 +91,7 @@ export default function ClientAccount() {
                       <p className="font-medium flex items-center gap-2 justify-end"><CalendarClock className="w-4 h-4" />{format(new Date(apt.appointmentDate), "PPP p")}</p>
                       <p className="text-sm uppercase tracking-wider text-zinc-500">{apt.status}</p>
                       {apt.status === "postponed" && apt.proposedStatus === "pending_client" && apt.proposedDate && (
-                        <div className="mt-2 space-y-2">
+                        <div className="postpone-panel mt-2 space-y-2 p-3 rounded-md">
                           <p className="text-sm text-amber-700">Proposed time: {format(new Date(apt.proposedDate), "PPP p")}</p>
                           <div className="flex gap-2 justify-end">
                             <Button size="sm" onClick={() => respond.mutate({ id: apt.id, action: "accept" })}>Accept</Button>
@@ -109,6 +110,13 @@ export default function ClientAccount() {
             <div className="flex justify-end">
               <Button variant="outline" onClick={() => markAllRead.mutate()} disabled={markAllRead.isPending}>Mark All Read</Button>
             </div>
+            {openedMessage && (
+              <Card className="border-orange-300 bg-orange-50">
+                <CardContent className="p-4">
+                  <p className="font-medium">{openedMessage}</p>
+                </CardContent>
+              </Card>
+            )}
             {notifications?.length ? (
               notifications.map((n) => (
                 <Card key={n.id} className={!n.isRead ? "border-amber-300" : ""}>
@@ -117,9 +125,17 @@ export default function ClientAccount() {
                       <p className="font-medium">{n.message}</p>
                       <p className="text-xs text-zinc-500">{format(new Date(n.createdAt || new Date()), "PPP p")}</p>
                     </div>
-                    {!n.isRead && (
-                      <Button size="sm" variant="outline" onClick={() => markRead.mutate(n.id)} disabled={markRead.isPending}>Read</Button>
-                    )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setOpenedMessage(n.message);
+                        if (!n.isRead) markRead.mutate(n.id);
+                      }}
+                      disabled={markRead.isPending}
+                    >
+                      {n.isRead ? "Open" : "Read"}
+                    </Button>
                   </CardContent>
                 </Card>
               ))

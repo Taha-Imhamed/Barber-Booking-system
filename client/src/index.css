@@ -41,24 +41,24 @@
   }
 
   .dark {
-    --background: 224 28% 8%;
+    --background: 30 15% 7%;
     --foreground: 36 24% 94%;
-    --card: 224 24% 11%;
+    --card: 24 12% 10%;
     --card-foreground: 36 24% 94%;
-    --popover: 224 24% 11%;
+    --popover: 24 12% 10%;
     --popover-foreground: 36 24% 94%;
     --primary: 24 92% 58%;
-    --primary-foreground: 220 30% 8%;
-    --secondary: 221 20% 17%;
+    --primary-foreground: 24 22% 8%;
+    --secondary: 24 12% 16%;
     --secondary-foreground: 36 24% 94%;
-    --muted: 221 20% 15%;
+    --muted: 24 10% 14%;
     --muted-foreground: 220 10% 72%;
-    --accent: 207 32% 22%;
+    --accent: 28 30% 20%;
     --accent-foreground: 36 24% 94%;
-    --destructive: 0 70% 48%;
+    --destructive: 353 69% 45%;
     --destructive-foreground: 0 0% 98%;
-    --border: 221 16% 28%;
-    --input: 221 16% 28%;
+    --border: 28 12% 27%;
+    --input: 28 12% 27%;
     --ring: 24 92% 58%;
   }
 
@@ -77,8 +77,8 @@
 
   .dark body {
     background-image:
-      radial-gradient(circle at 10% 15%, rgba(251, 146, 60, 0.12), transparent 42%),
-      radial-gradient(circle at 85% 90%, rgba(56, 189, 248, 0.11), transparent 38%);
+      radial-gradient(circle at 10% 15%, rgba(251, 146, 60, 0.14), transparent 42%),
+      radial-gradient(circle at 85% 90%, rgba(251, 146, 60, 0.08), transparent 38%);
   }
 
   h1, h2, h3, h4, h5, h6 {
@@ -97,6 +97,31 @@
     @apply bg-white/95 backdrop-blur-xl border border-zinc-200 shadow-xl;
   }
 
+  .status-chip {
+    @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide;
+  }
+  .status-chip--pending {
+    @apply bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200;
+  }
+  .status-chip--accepted {
+    @apply bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300;
+  }
+  .status-chip--rejected {
+    @apply bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-300;
+  }
+  .status-chip--completed {
+    @apply bg-orange-100 text-orange-800 dark:bg-orange-950/60 dark:text-orange-300;
+  }
+  .status-chip--postponed {
+    @apply bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300;
+  }
+  .postpone-panel {
+    @apply border border-orange-300 bg-orange-50 dark:bg-zinc-900 dark:border-orange-500/60;
+  }
+  .fade-rise {
+    animation: fadeRise 420ms ease-out both;
+  }
+
   .admin-theme .bg-white,
   .barber-theme .bg-white {
     @apply dark:bg-zinc-900;
@@ -113,6 +138,17 @@
   .admin-theme .text-zinc-500,
   .admin-theme .text-zinc-600 {
     @apply dark:text-zinc-400;
+  }
+}
+
+@keyframes fadeRise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 

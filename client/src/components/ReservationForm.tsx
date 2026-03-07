@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, MapPin, Scissors, User as UserIcon, Clock, ShieldCheck } from "lucide-react";
+import { Calendar as CalendarIcon, MapPin, Scissors, User as UserIcon, Clock, ShieldCheck, CircleAlert } from "lucide-react";
+import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -13,9 +14,10 @@ import { useAuth } from "@/hooks/use-auth";
 import { useBranches } from "@/hooks/use-branches";
 import { useServices } from "@/hooks/use-services";
 import { useBarbers } from "@/hooks/use-barbers";
-import { useCreateAppointment } from "@/hooks/use-appointments";
+import { useAppointments, useCreateAppointment } from "@/hooks/use-appointments";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
+import { sendReservationConfirmationEmail } from "@/lib/emailjs";
 
 export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?: number | null }) {
   const { toast } = useToast();
@@ -25,6 +27,7 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
   const { data: branches, isLoading: isLoadingBranches } = useBranches();
   const { data: services, isLoading: isLoadingServices } = useServices();
   const { data: barbers, isLoading: isLoadingBarbers } = useBarbers();
+  const { data: appointments } = useAppointments();
   const createAppointment = useCreateAppointment();
 
   const [step, setStep] = useState(1);
@@ -80,6 +83,30 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
       }
 
       await createAppointment.mutateAsync(payload);
+
+      const emailTarget = (user?.email ?? formData.guestEmail ?? "").trim();
+      if (emailTarget) {
+        const branch = branches?.find((b) => Number(b.id) === parsedBranchId);
+        const service = services?.find((s) => Number(s.id) === parsedServiceId);
+        const barber = barbers?.find((b) => Number(b.id) === parsedBarberId);
+        const fullName = user
+          ? `${user.firstName} ${user.lastName}`.trim()
+          : `${formData.guestFirstName} ${formData.guestLastName}`.trim();
+
+        try {
+          await sendReservationConfirmationEmail({
+            toEmail: emailTarget,
+            toName: fullName || "Client",
+            barberName: barber ? `${barber.firstName} ${barber.lastName}` : `#${parsedBarberId}`,
+            serviceName: service?.name ?? `#${parsedServiceId}`,
+            appointmentDateTime: format(finalDate, "PPP p"),
+            branchName: branch?.name ?? `#${parsedBranchId}`,
+          });
+        } catch {
+          // Reservation should still succeed even if third-party email sending fails.
+        }
+      }
+
       toast({
         title: "Reservation submitted",
         description: "Your request was sent to the barber. You will get notified on updates.",
@@ -107,6 +134,7 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
   };
 
   const timeSlots = ["09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00"];
+  const minimumBarberLockMinutes = 120;
   const barbersForBranch = barbers?.filter((b) => {
     if (b.role !== "barber") return false;
     if (b.isAvailable === false) return false;
@@ -117,6 +145,7 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
 
   const effectiveBarberId = preselectedBarberId ? String(preselectedBarberId) : formData.barberId;
   const selectedBarberByChoice = barbers?.find((b) => Number(b.id) === Number(effectiveBarberId));
+  const selectedService = services?.find((s) => Number(s.id) === Number(formData.serviceId));
   const blockedHours = (() => {
     if (!selectedBarberByChoice?.unavailableHours) return [];
     try {
@@ -126,6 +155,49 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
       return [];
     }
   })();
+  const blockedByBookings = (() => {
+    if (!selectedBarberByChoice || !selectedService || !formData.appointmentDate) return [];
+    const serviceById = new Map((services ?? []).map((s) => [Number(s.id), s]));
+    const blockingStatuses = new Set(["pending", "accepted", "postponed"]);
+    const dayStart = new Date(formData.appointmentDate);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+    const sameDayAppointments = (appointments ?? []).filter((a) => {
+      if (Number(a.barberId) !== Number(selectedBarberByChoice.id)) return false;
+      if (!blockingStatuses.has(a.status)) return false;
+      const apptStartRaw =
+        a.status === "postponed" && a.proposedStatus === "pending_client" && a.proposedDate
+          ? new Date(a.proposedDate)
+          : new Date(a.appointmentDate);
+      return apptStartRaw >= dayStart && apptStartRaw < dayEnd;
+    });
+    return timeSlots.filter((slot) => {
+      const [hh, mm] = slot.split(":");
+      const candidateStart = new Date(formData.appointmentDate);
+      candidateStart.setHours(Number(hh), Number(mm), 0, 0);
+      const candidateLockMinutes = Math.max(selectedService.durationMinutes, minimumBarberLockMinutes);
+      const candidateEnd = new Date(candidateStart.getTime() + candidateLockMinutes * 60 * 1000);
+      return sameDayAppointments.some((a) => {
+        const existingService = serviceById.get(Number(a.serviceId));
+        if (!existingService) return false;
+        const existingStart =
+          a.status === "postponed" && a.proposedStatus === "pending_client" && a.proposedDate
+            ? new Date(a.proposedDate)
+            : new Date(a.appointmentDate);
+        const existingLockMinutes = Math.max(existingService.durationMinutes, minimumBarberLockMinutes);
+        const existingEnd = new Date(existingStart.getTime() + existingLockMinutes * 60 * 1000);
+        return candidateStart < existingEnd && candidateEnd > existingStart;
+      });
+    });
+  })();
+  const blockedSlotSet = new Set([...blockedHours, ...blockedByBookings]);
+
+  useEffect(() => {
+    if (formData.timeSlot && blockedSlotSet.has(formData.timeSlot)) {
+      setFormData((prev) => ({ ...prev, timeSlot: "" }));
+    }
+  }, [formData.timeSlot, formData.appointmentDate, effectiveBarberId, selectedService?.id]);
 
   return (
     <Card className="glass-panel text-zinc-900 w-full max-w-xl mx-auto overflow-hidden relative">
@@ -176,6 +248,16 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
               <Button type="button" className="w-full bg-zinc-900 hover:bg-zinc-800 text-white font-semibold mt-4" onClick={() => setStep(2)} disabled={!formData.branchId || !formData.serviceId}>
                 Continue
               </Button>
+              {!user && (
+                <div className="space-y-2">
+                  <Link href="/check">
+                    <Button type="button" className="w-full bg-amber-600 hover:bg-amber-700 text-white">Check Reservation by Number</Button>
+                  </Link>
+                  <Link href="/auth">
+                    <Button type="button" variant="outline" className="w-full">Login (Phone)</Button>
+                  </Link>
+                </div>
+              )}
             </div>
           )}
 
@@ -228,14 +310,20 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
                     </SelectTrigger>
                     <SelectContent>
                       {timeSlots.map((time) => (
-                        <SelectItem key={time} value={time} disabled={blockedHours.includes(time)}>
-                          {time}
+                        <SelectItem key={time} value={time} disabled={blockedSlotSet.has(time)}>
+                          <div className="flex items-center justify-between w-full gap-3">
+                            <span>{time}</span>
+                            {blockedSlotSet.has(time) && <CircleAlert className="w-3.5 h-3.5 text-red-500" />}
+                          </div>
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  {formData.timeSlot && blockedHours.includes(formData.timeSlot) && (
+                  {formData.timeSlot && blockedSlotSet.has(formData.timeSlot) && (
                     <p className="text-xs text-red-600">This barber is not available at {formData.timeSlot}.</p>
+                  )}
+                  {selectedService && (
+                    <p className="text-xs text-zinc-500">Barber is locked for at least {minimumBarberLockMinutes} minutes per booking.</p>
                   )}
                 </div>
               </div>
@@ -244,7 +332,7 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
                 <Button type="button" variant="outline" className="w-full border-zinc-300 hover:bg-zinc-100" onClick={() => setStep(1)}>
                   Back
                 </Button>
-                <Button type="button" className="w-full bg-zinc-900 hover:bg-zinc-800 text-white font-semibold" onClick={() => setStep(3)} disabled={!effectiveBarberId || !formData.timeSlot}>
+                <Button type="button" className="w-full bg-zinc-900 hover:bg-zinc-800 text-white font-semibold" onClick={() => setStep(3)} disabled={!effectiveBarberId || !formData.timeSlot || blockedSlotSet.has(formData.timeSlot)}>
                   Continue
                 </Button>
               </div>
