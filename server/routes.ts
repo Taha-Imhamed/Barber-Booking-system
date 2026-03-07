@@ -19,6 +19,8 @@ export async function registerRoutes(
 ): Promise<Server> {
   const loyaltyPointsPerCompletedVisit = 10;
   const minimumBarberLockMinutes = 120;
+  const salonPhone = process.env.SALON_PHONE || "692057984";
+  const salonAddress = process.env.SALON_ADDRESS || "Istanbul";
   const appBaseUrl = process.env.APP_BASE_URL || "http://localhost:5000";
   const defaultGoogleClientId = "519299194836-q7bvbn0jlonm6u47crap9lfhcg6835m0.apps.googleusercontent.com";
 
@@ -578,6 +580,48 @@ export async function registerRoutes(
         message: `New appointment requested by ${input.guestFirstName || clientUser?.firstName || "a client"} for ${new Date(input.appointmentDate).toLocaleString()}`,
         isRead: false,
       });
+
+      const bookedBranch = (await storage.getBranches()).find((b) => Number(b.id) === Number(input.branchId));
+      const clientName = `${input.guestFirstName ?? clientUser?.firstName ?? ""} ${input.guestLastName ?? clientUser?.lastName ?? ""}`.trim() || "Client";
+      const toEmail = input.guestEmail ?? clientUser?.email ?? null;
+      const appointmentDate = new Date(input.appointmentDate);
+      if (toEmail) {
+        const appointmentDateText = appointmentDate.toLocaleDateString();
+        const appointmentTimeText = appointmentDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        const barberName = `${barber.firstName} ${barber.lastName}`.trim();
+        const subject = "Istanbul Salon - Appointment Request Received";
+        const fallbackText = [
+          "Istanbul Salon",
+          `Hello ${clientName},`,
+          "",
+          "Thank you for choosing Istanbul Salon. We have successfully received your appointment request.",
+          "Our team is currently reviewing your booking and will confirm it shortly.",
+          "",
+          `Service: ${selectedService.name}`,
+          `Preferred Barber: ${barberName}`,
+          `Branch: ${bookedBranch?.name ?? input.branchId}`,
+          `Date: ${appointmentDateText}`,
+          `Time: ${appointmentTimeText}`,
+          "",
+          "Once the barber confirms availability, you will receive another email with the final confirmation.",
+          "",
+          "Best regards,",
+          "Istanbul Salon Team",
+          `Phone: ${salonPhone}`,
+          `Address: ${salonAddress}`,
+        ].join("\n");
+
+        void sendEmail(toEmail, subject, fallbackText, {
+          client_name: clientName,
+          service_name: selectedService.name,
+          barber_name: barberName,
+          branch_name: bookedBranch?.name ?? String(input.branchId),
+          appointment_date: appointmentDateText,
+          appointment_time: appointmentTimeText,
+          salon_phone: salonPhone,
+          salon_address: salonAddress,
+        });
+      }
 
       res.status(201).json(appointment);
     } catch (err) {

@@ -1,8 +1,7 @@
 import { ReservationForm } from "@/components/ReservationForm";
 import { Navbar } from "@/components/layout/Navbar";
 import { useBarbers } from "@/hooks/use-barbers";
-import { useBranches } from "@/hooks/use-branches";
-import { CalendarClock, ShieldCheck, Gift, MapPin } from "lucide-react";
+import { CalendarClock, ShieldCheck, Gift } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
@@ -12,17 +11,10 @@ const HERO_BG =
 
 export default function Landing() {
   const { data: barbers } = useBarbers();
-  const { data: branches } = useBranches();
   const { t } = useI18n();
   const [selectedBarberId, setSelectedBarberId] = useState<number | null>(null);
   const [confirmBarberId, setConfirmBarberId] = useState<number | null>(null);
   const barberById = useMemo(() => new Map((barbers ?? []).map((b) => [Number(b.id), b])), [barbers]);
-  const barbersByBranch = useMemo(() => {
-    return (branches ?? []).map((branch) => ({
-      ...branch,
-      barbers: (barbers ?? []).filter((b) => b.role === "barber" && b.isAvailable !== false && Number(b.branchId) === Number(branch.id)),
-    }));
-  }, [branches, barbers]);
   return (
     <div className="min-h-screen bg-background text-zinc-900">
       <Navbar />
@@ -73,7 +65,7 @@ export default function Landing() {
       </section>
 
       <section id="timetable" className="py-10 md:py-16 px-4 sm:px-6">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 gap-6">
           <div className="rounded-2xl border border-zinc-200 bg-white p-6">
             <h2 className="text-2xl font-semibold mb-3">{t("team")}</h2>
             <p className="text-zinc-600 mb-4">Tap a barber photo to start booking with them.</p>
@@ -93,36 +85,6 @@ export default function Landing() {
                   <p className="font-semibold">{barber.firstName} {barber.lastName}</p>
                   <p className="text-xs text-zinc-500">{t("reserveWith")} {barber.firstName}</p>
                 </button>
-              ))}
-            </div>
-          </div>
-
-          <div id="branches" className="rounded-2xl border border-zinc-200 bg-white p-6">
-            <h2 className="text-2xl font-semibold mb-3">{t("branches")}</h2>
-            <p className="text-zinc-600 mb-4">Each branch shows its barbers separately.</p>
-            <div className="space-y-4">
-              {barbersByBranch.map((branch) => (
-                <div key={branch.id} className="rounded-lg border border-zinc-200 p-4">
-                  <a
-                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(branch.location)}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex items-start gap-3 hover:opacity-80"
-                  >
-                    <MapPin className="w-5 h-5 text-amber-700 mt-0.5" />
-                    <div>
-                      <p className="font-semibold">Branch {branch.name}</p>
-                      <p className="text-zinc-600 text-sm">{branch.location}</p>
-                    </div>
-                  </a>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {branch.barbers.length ? branch.barbers.map((b) => (
-                      <p key={b.id} className="text-sm text-zinc-700">
-                        - {b.firstName} {b.lastName}
-                      </p>
-                    )) : <span className="text-xs text-zinc-500">No barbers assigned.</span>}
-                  </div>
-                </div>
               ))}
             </div>
           </div>

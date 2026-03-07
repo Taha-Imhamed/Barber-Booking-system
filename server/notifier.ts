@@ -9,6 +9,8 @@ type MultiNotifyResult = {
   sms: NotifyResult;
 };
 
+type TemplateParams = Record<string, string | number | boolean | null | undefined>;
+
 async function sendViaBrevo(to: string, subject: string, text: string): Promise<NotifyResult> {
   const apiKey = process.env.BREVO_API_KEY;
   const senderEmail = process.env.BREVO_SENDER_EMAIL;
@@ -64,7 +66,7 @@ async function sendViaResend(to: string, subject: string, text: string): Promise
   return { sent: true, provider: "resend" };
 }
 
-async function sendViaEmailJs(to: string, subject: string, text: string): Promise<NotifyResult> {
+async function sendViaEmailJs(to: string, subject: string, text: string, templateParams?: TemplateParams): Promise<NotifyResult> {
   const serviceId = process.env.EMAILJS_SERVICE_ID || process.env.VITE_EMAILJS_SERVICE_ID;
   const templateId = process.env.EMAILJS_TEMPLATE_ID || process.env.VITE_EMAILJS_TEMPLATE_ID;
   const publicKey = process.env.EMAILJS_PUBLIC_KEY || process.env.VITE_EMAILJS_PUBLIC_KEY;
@@ -87,6 +89,7 @@ async function sendViaEmailJs(to: string, subject: string, text: string): Promis
         title: subject,
         message: text,
         content: text,
+        ...(templateParams ?? {}),
       },
     }),
   });
@@ -98,7 +101,7 @@ async function sendViaEmailJs(to: string, subject: string, text: string): Promis
   return { sent: true, provider: "emailjs" };
 }
 
-export async function sendEmail(to: string, subject: string, text: string): Promise<NotifyResult> {
+export async function sendEmail(to: string, subject: string, text: string, templateParams?: TemplateParams): Promise<NotifyResult> {
   if (!to) return { sent: false, provider: "none", error: "No recipient email" };
 
   if (process.env.BREVO_API_KEY) {
@@ -108,7 +111,7 @@ export async function sendEmail(to: string, subject: string, text: string): Prom
     return sendViaResend(to, subject, text);
   }
   if (process.env.EMAILJS_SERVICE_ID || process.env.VITE_EMAILJS_SERVICE_ID) {
-    return sendViaEmailJs(to, subject, text);
+    return sendViaEmailJs(to, subject, text, templateParams);
   }
 
   console.log("[email:console]", { to, subject, text });

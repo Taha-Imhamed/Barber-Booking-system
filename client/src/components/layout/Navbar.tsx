@@ -30,14 +30,8 @@ export function Navbar() {
             <a href="/#timetable" className="text-sm font-semibold text-zinc-500 hover:text-zinc-900 transition-colors hidden md:block">
               {t("timetable")}
             </a>
-            <a href="/#branches" className="text-sm font-semibold text-zinc-500 hover:text-zinc-900 transition-colors hidden md:block">
-              {t("branches")}
-            </a>
             <Link href="/display" className="text-sm font-semibold text-zinc-500 hover:text-zinc-900 transition-colors hidden md:block">
               {t("wallDisplay")}
-            </Link>
-            <Link href="/check" className="text-sm font-semibold text-zinc-500 hover:text-zinc-900 transition-colors">
-              Check
             </Link>
             <select
               aria-label={t("language")}
