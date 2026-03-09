@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
-import { CalendarDays, CheckCircle, XCircle, Clock3, LogOut, BarChart3, TableProperties, Moon, Sun } from "lucide-react";
+import { CalendarDays, CheckCircle, XCircle, Clock3, LogOut, BarChart3, TableProperties, Moon, Sun, Home } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -16,6 +16,9 @@ import { api } from "@shared/routes";
 import { usePublicSettings } from "@/hooks/use-settings";
 import { useTheme } from "@/hooks/use-theme";
 import { useI18n } from "@/i18n";
+import AppointmentCalendar from "@/components/AppointmentCalendar";
+import { useAddGalleryItem, useBarberGallery, useDeleteGalleryItem, useUpdateGalleryItem } from "@/hooks/use-advanced";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 export default function BarberDashboard() {
   const [, setLocation] = useLocation();
@@ -30,14 +33,24 @@ export default function BarberDashboard() {
   const updateStatus = useUpdateAppointmentStatus();
   const updateBarber = useUpdateBarber();
   const [now, setNow] = useState(Date.now());
-  const [view, setView] = useState<"pending" | "upcoming" | "accepted" | "timetable" | "chat">("pending");
+  const [view, setView] = useState<"pending" | "upcoming" | "accepted" | "timetable" | "chat" | "gallery">("pending");
   const [showTimetable, setShowTimetable] = useState<boolean>(() => localStorage.getItem("barber_show_timetable") !== "0");
   const [groups, setGroups] = useState<any[]>([]);
   const [activeGroupId, setActiveGroupId] = useState<number | null>(null);
   const [groupMessages, setGroupMessages] = useState<any[]>([]);
   const [groupMessageText, setGroupMessageText] = useState("");
+  const [clientHistory, setClientHistory] = useState<any | null>(null);
   const [tipByAppointment, setTipByAppointment] = useState<Record<number, string>>({});
   const { data: settings } = usePublicSettings();
+  const gallery = useBarberGallery(barberUser?.id);
+  const addGalleryItem = useAddGalleryItem();
+  const updateGalleryItem = useUpdateGalleryItem();
+  const deleteGalleryItem = useDeleteGalleryItem();
+  const [galleryCaption, setGalleryCaption] = useState("");
+  const [galleryFile, setGalleryFile] = useState<File | null>(null);
+  const [editingGalleryId, setEditingGalleryId] = useState<number | null>(null);
+  const [captionDraftById, setCaptionDraftById] = useState<Record<number, string>>({});
+  const [replaceFileById, setReplaceFileById] = useState<Record<number, File | null>>({});
   const [isAvailable, setIsAvailable] = useState<boolean>(barberUser?.isAvailable !== false);
   const [unavailableHours, setUnavailableHours] = useState<string[]>(() => {
     try {
@@ -55,6 +68,15 @@ export default function BarberDashboard() {
   const accepted = myAppointments.filter((a) => a.status === "accepted");
   const completed = myAppointments.filter((a) => a.status === "completed");
   const schedule = [...myAppointments].sort((a, b) => new Date(a.appointmentDate).getTime() - new Date(b.appointmentDate).getTime());
+  const galleryItems = useMemo(
+    () =>
+      (gallery.data ?? []).map((img: any) => ({
+        id: Number(img.id),
+        imageUrl: String(img.image_url ?? img.imageUrl ?? ""),
+        caption: String(img.caption ?? ""),
+      })),
+    [gallery.data],
+  );
 
   const upcomingAppointments = useMemo(
     () =>
@@ -143,7 +165,90 @@ export default function BarberDashboard() {
     setUnavailableHours((prev) => (prev.includes(hour) ? prev.filter((h) => h !== hour) : [...prev, hour]));
   };
 
+  const compressImageFile = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const canvas = document.createElement("canvas");
+            const max = 1200;
+            const ratio = Math.min(1, max / Math.max(img.width, img.height));
+            canvas.width = Math.round(img.width * ratio);
+            canvas.height = Math.round(img.height * ratio);
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return reject(new Error("Canvas is not supported."));
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.72);
+            resolve(dataUrl);
+          } catch (e: any) {
+            reject(new Error(e?.message || "Image compression failed."));
+          }
+        };
+        img.onerror = () => reject(new Error("Invalid image file."));
+        img.src = String(reader.result ?? "");
+      };
+      reader.onerror = () => reject(new Error("Failed to read image file."));
+      reader.readAsDataURL(file);
+    });
+
   const timeSlots = ["09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00"];
+  const handleSaveGalleryItem = async () => {
+    if (!galleryFile || !barberUser) {
+      toast({ variant: "destructive", title: "Select an image first" });
+      return;
+    }
+    try {
+      const compressed = await compressImageFile(galleryFile);
+      await addGalleryItem.mutateAsync({
+        barberId: barberUser.id,
+        imageUrl: compressed,
+        caption: galleryCaption || undefined,
+      });
+      setGalleryCaption("");
+      setGalleryFile(null);
+      toast({ title: "Gallery image saved" });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Upload failed", description: err.message || "Could not upload image." });
+    }
+  };
+  const handleStartEditGallery = (item: any) => {
+    setEditingGalleryId(Number(item.id));
+    setCaptionDraftById((prev) => ({ ...prev, [item.id]: item.caption || "" }));
+    setReplaceFileById((prev) => ({ ...prev, [item.id]: null }));
+  };
+  const handleCancelEditGallery = () => {
+    setEditingGalleryId(null);
+  };
+  const handleUpdateGalleryItem = async (id: number) => {
+    if (!barberUser) return;
+    try {
+      const replacementFile = replaceFileById[id];
+      const imageUrl = replacementFile ? await compressImageFile(replacementFile) : undefined;
+      await updateGalleryItem.mutateAsync({
+        id,
+        barberId: barberUser.id,
+        imageUrl,
+        caption: captionDraftById[id] ?? "",
+      });
+      setEditingGalleryId(null);
+      setReplaceFileById((prev) => ({ ...prev, [id]: null }));
+      toast({ title: "Gallery post updated" });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Update failed", description: err.message || "Could not update gallery post." });
+    }
+  };
+  const handleDeleteGalleryItem = async (id: number) => {
+    if (!barberUser) return;
+    if (!window.confirm("Delete this gallery post?")) return;
+    try {
+      await deleteGalleryItem.mutateAsync({ id, barberId: barberUser.id });
+      toast({ title: "Gallery post deleted" });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Delete failed", description: err.message || "Could not delete gallery post." });
+    }
+  };
 
   const getServiceName = (id: number) => services?.find((s) => s.id === id)?.name || "Service";
   const statusChipClass = (status: string) => {
@@ -181,6 +286,7 @@ export default function BarberDashboard() {
           <Button variant={view === "upcoming" ? "default" : "outline"} className="w-full justify-start" onClick={() => setView("upcoming")}>Upcoming</Button>
           <Button variant={view === "accepted" ? "default" : "outline"} className="w-full justify-start" onClick={() => setView("accepted")}>Accepted</Button>
           <Button variant={view === "timetable" ? "default" : "outline"} className="w-full justify-start" onClick={() => setView("timetable")}>Full Timetable</Button>
+          <Button variant={view === "gallery" ? "default" : "outline"} className="w-full justify-start" onClick={() => setView("gallery")}>Gallery</Button>
           <Button variant={view === "chat" ? "default" : "outline"} className="w-full justify-start" onClick={() => { setView("chat"); void loadGroups(); }}>Group Chat</Button>
         </nav>
 
@@ -194,6 +300,13 @@ export default function BarberDashboard() {
               <p className="text-xs text-slate-500">Barber</p>
             </div>
           </div>
+          <Button
+            variant="outline"
+            className="w-full mb-2"
+            onClick={() => setLocation("/")}
+          >
+            <Home className="mr-2 h-4 w-4" /> Back To Home
+          </Button>
           <Button
             variant="destructive"
             className="w-full bg-red-500/10 text-red-600 hover:bg-red-500 hover:text-white border-none"
@@ -293,6 +406,68 @@ export default function BarberDashboard() {
               />
             </div>
           </div>
+          {view === "gallery" && (
+          <div className="mt-4 rounded-xl border border-slate-200 p-4 bg-white">
+            <p className="font-semibold mb-2">Portfolio / Gallery Posts</p>
+            <div className="flex gap-2 mb-3">
+              <Input value={galleryCaption} onChange={(e) => setGalleryCaption(e.target.value)} placeholder="Caption (optional)" />
+              <Input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setGalleryFile(e.target.files?.[0] ?? null)}
+              />
+              <Button type="button" onClick={handleSaveGalleryItem} disabled={!galleryFile || addGalleryItem.isPending}>
+                {addGalleryItem.isPending ? "Saving..." : "Save to Gallery"}
+              </Button>
+            </div>
+            {galleryFile ? <p className="text-xs text-slate-600 dark:text-zinc-300 mb-2">Selected file: {galleryFile.name}</p> : null}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {galleryItems.map((img) => (
+                <div key={img.id} className="rounded-lg border border-slate-200 p-2 bg-slate-50 dark:bg-zinc-900/70 dark:border-zinc-700">
+                  <img src={img.imageUrl} alt={img.caption || "Gallery"} className="h-32 w-full rounded object-cover border mb-2" />
+                  {editingGalleryId === img.id ? (
+                    <div className="space-y-2">
+                      <Input
+                        value={captionDraftById[img.id] ?? img.caption}
+                        onChange={(e) => setCaptionDraftById((prev) => ({ ...prev, [img.id]: e.target.value }))}
+                        placeholder="Edit caption"
+                      />
+                      <Input type="file" accept="image/*" onChange={(e) => setReplaceFileById((prev) => ({ ...prev, [img.id]: e.target.files?.[0] ?? null }))} />
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => void handleUpdateGalleryItem(img.id)}
+                          disabled={updateGalleryItem.isPending}
+                        >
+                          {updateGalleryItem.isPending ? "Saving..." : "Save"}
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={handleCancelEditGallery}>Cancel</Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-sm text-slate-700 dark:text-zinc-200 min-h-10">{img.caption || "No caption"}</p>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" onClick={() => handleStartEditGallery(img)}>Edit</Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => void handleDeleteGalleryItem(img.id)}
+                          disabled={deleteGalleryItem.isPending}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {galleryItems.length === 0 ? (
+                <p className="text-sm text-slate-600 dark:text-zinc-300">No gallery posts yet. Add a new post above.</p>
+              ) : null}
+            </div>
+          </div>
+          )}
           <div className="bg-white border border-slate-200 rounded-xl p-4">
             <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
               <p className="font-semibold">Availability</p>
@@ -463,6 +638,18 @@ export default function BarberDashboard() {
                           className="tip-panel__input"
                         />
                       </div>
+                      {apt.clientId ? (
+                        <Button
+                          variant="outline"
+                          onClick={async () => {
+                            const res = await fetch(api.clientHistory.profile.path.replace(":id", String(apt.clientId)), { credentials: "include" });
+                            if (!res.ok) return;
+                            setClientHistory(await res.json());
+                          }}
+                        >
+                          Client History
+                        </Button>
+                      ) : null}
                     </div>
                   </div>
                 ))}
@@ -474,6 +661,7 @@ export default function BarberDashboard() {
 
         {showTimetable && view === "timetable" && (
         <section>
+          <AppointmentCalendar appointments={schedule} barbers={[barberUser]} />
           <h2 className="text-2xl font-semibold mb-5 flex items-center gap-2"><TableProperties className="w-5 h-5" /> Full Timetable</h2>
           <div className="bg-white border border-slate-200 rounded-xl p-4 overflow-x-auto">
             <Table>
@@ -502,6 +690,26 @@ export default function BarberDashboard() {
         </>
         )}
       </main>
+
+      <Dialog open={Boolean(clientHistory)} onOpenChange={(open) => !open && setClientHistory(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Client History</DialogTitle>
+          </DialogHeader>
+          {clientHistory ? (
+            <div className="space-y-2 text-sm">
+              <p className="font-medium">{clientHistory.client?.firstName} {clientHistory.client?.lastName}</p>
+              <p>Favorite barber: {clientHistory.favoriteBarber ?? "-"}</p>
+              <p>Most frequent service: {clientHistory.mostFrequentService ?? "-"}</p>
+              <div className="max-h-56 overflow-auto space-y-1 border rounded p-2">
+                {(clientHistory.visits ?? []).map((v: any) => (
+                  <p key={v.id}>{new Date(v.date).toLocaleDateString()} - {v.service}</p>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

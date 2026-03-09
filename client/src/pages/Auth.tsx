@@ -24,7 +24,7 @@ function GoogleIcon() {
 export default function Auth() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { login, register, signInWithGoogle, resendVerificationEmail, isLoggingIn, isRegistering, isResendingVerification } = useAuth();
+  const { login, register, signInWithGoogle, signInWithFacebook, signInWithApple, resendVerificationEmail, isLoggingIn, isRegistering, isResendingVerification } = useAuth();
   const { t } = useI18n();
   const { themeMode, toggleTheme } = useTheme();
 
@@ -104,6 +104,16 @@ export default function Auth() {
       .catch((err: any) => {
         toast({ variant: "destructive", title: t("verificationFailed"), description: err.message || t("invalidLink") });
       });
+  }, [toast]);
+
+  useEffect(() => {
+    const provider = new URLSearchParams(window.location.search).get("provider");
+    if (provider === "facebook_not_configured") {
+      toast({ variant: "destructive", title: "Facebook Login", description: "Facebook OAuth is not configured yet." });
+    }
+    if (provider === "apple_not_configured") {
+      toast({ variant: "destructive", title: "Apple Sign-In", description: "Apple OAuth is not configured yet." });
+    }
   }, [toast]);
 
   useEffect(() => {
@@ -216,6 +226,12 @@ export default function Auth() {
               <Button type="button" variant="outline" className="w-full border-zinc-300 dark:border-zinc-700" onClick={signInWithGoogle}>
                 <GoogleIcon />
                 {t("googleSignIn")} {t("clientsOnly")}
+              </Button>
+              <Button type="button" variant="outline" className="w-full border-zinc-300 dark:border-zinc-700" onClick={signInWithFacebook}>
+                Facebook Sign-In (Beta)
+              </Button>
+              <Button type="button" variant="outline" className="w-full border-zinc-300 dark:border-zinc-700" onClick={signInWithApple}>
+                Apple Sign-In (Beta)
               </Button>
               {!isLogin && (
                 <Button type="button" variant="ghost" className="w-full text-zinc-600" onClick={handleResendVerification} disabled={isResendingVerification}>

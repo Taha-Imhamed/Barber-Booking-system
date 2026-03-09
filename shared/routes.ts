@@ -1,6 +1,29 @@
 ﻿import { z } from "zod";
 import { createInsertSchema } from "drizzle-zod";
-import { branches, users, services, appointments, feedbacks, notifications, adminMessages, appointmentEarnings, guestNotifications, expenses, chatGroups, chatMessages, appSettings } from "./schema";
+import {
+  branches,
+  users,
+  services,
+  appointments,
+  feedbacks,
+  notifications,
+  adminMessages,
+  appointmentEarnings,
+  guestNotifications,
+  expenses,
+  chatGroups,
+  chatMessages,
+  appSettings,
+  reviews,
+  waitlist,
+  inventory,
+  barberGallery,
+  referrals,
+  referralCodes,
+  customerTags,
+  marketingCampaigns,
+  auditLogs,
+} from "./schema";
 
 export const insertUserSchema = createInsertSchema(users).omit({ id: true });
 export const insertBranchSchema = createInsertSchema(branches).omit({ id: true });
@@ -47,6 +70,20 @@ export const api = {
       path: "/api/auth/google/callback" as const,
       responses: {
         302: z.object({ ok: z.boolean() }),
+      },
+    },
+    facebook: {
+      method: "GET" as const,
+      path: "/api/auth/facebook" as const,
+      responses: {
+        501: z.object({ message: z.string() }),
+      },
+    },
+    apple: {
+      method: "GET" as const,
+      path: "/api/auth/apple" as const,
+      responses: {
+        501: z.object({ message: z.string() }),
       },
     },
     verifyEmail: {
@@ -255,7 +292,7 @@ export const api = {
     deleteAppointments: {
       method: "POST" as const,
       path: "/api/admin/appointments/delete" as const,
-      input: z.object({ ids: z.array(z.number()) }),
+      input: z.object({ ids: z.array(z.coerce.number().int().positive()) }),
       responses: {
         200: z.object({ ok: z.boolean(), deleted: z.number() }),
       },
@@ -296,6 +333,75 @@ export const api = {
     developerExport: {
       method: "GET" as const,
       path: "/api/admin/developer/export" as const,
+      responses: {
+        200: z.any(),
+      },
+    },
+    adminsList: {
+      method: "GET" as const,
+      path: "/api/admin/admins" as const,
+      responses: {
+        200: z.object({
+          ok: z.boolean(),
+          admins: z.array(
+            z.object({
+              id: z.number(),
+              username: z.string().nullable(),
+              firstName: z.string(),
+              lastName: z.string(),
+              email: z.string().nullable(),
+              adminPermissions: z.string().nullable(),
+              isMainAdmin: z.boolean(),
+            }),
+          ),
+        }),
+      },
+    },
+    createAdmin: {
+      method: "POST" as const,
+      path: "/api/admin/admins" as const,
+      input: z.object({
+        username: z.string().min(3),
+        password: z.string().min(6),
+        firstName: z.string().min(1),
+        lastName: z.string().min(1),
+        email: z.string().email().optional(),
+        phone: z.string().optional(),
+        permissions: z.array(z.string()).default([]),
+      }),
+      responses: {
+        201: z.object({ ok: z.boolean(), user: z.any() }),
+      },
+    },
+    updateAdminPermissions: {
+      method: "PATCH" as const,
+      path: "/api/admin/admins/:id/permissions" as const,
+      input: z.object({ permissions: z.array(z.string()) }),
+      responses: { 200: z.object({ ok: z.boolean() }) },
+    },
+    changeAdminPassword: {
+      method: "PATCH" as const,
+      path: "/api/admin/admins/:id/password" as const,
+      input: z.object({ username: z.string().min(3).optional(), password: z.string().min(6).optional() }),
+      responses: { 200: z.object({ ok: z.boolean() }) },
+    },
+    developerSchema: {
+      method: "GET" as const,
+      path: "/api/admin/developer/schema" as const,
+      responses: {
+        200: z.object({ ok: z.boolean(), schema: z.any() }),
+      },
+    },
+    developerSqlReport: {
+      method: "GET" as const,
+      path: "/api/admin/developer/sql-report" as const,
+      responses: {
+        200: z.object({ ok: z.boolean(), report: z.any() }),
+      },
+    },
+    developerSqlExport: {
+      method: "GET" as const,
+      path: "/api/admin/developer/sql-export" as const,
       responses: {
         200: z.any(),
       },
@@ -416,6 +522,259 @@ export const api = {
       },
     },
   },
+  calendar: {
+    events: {
+      method: "GET" as const,
+      path: "/api/calendar/events" as const,
+      responses: { 200: z.array(z.any()) },
+    },
+    moveAppointment: {
+      method: "PATCH" as const,
+      path: "/api/calendar/appointments/:id/move" as const,
+      input: z.object({ appointmentDate: z.string() }),
+      responses: { 200: z.any() },
+    },
+  },
+  clientHistory: {
+    profile: {
+      method: "GET" as const,
+      path: "/api/clients/:id/history" as const,
+      responses: { 200: z.any() },
+    },
+  },
+  reviews: {
+    list: {
+      method: "GET" as const,
+      path: "/api/reviews" as const,
+      responses: { 200: z.array(z.custom<typeof reviews.$inferSelect>()) },
+    },
+    create: {
+      method: "POST" as const,
+      path: "/api/reviews" as const,
+      input: z.object({
+        appointmentId: z.number(),
+        rating: z.number().min(1).max(5),
+        comment: z.string().optional(),
+      }),
+      responses: { 201: z.custom<typeof reviews.$inferSelect>() },
+    },
+    moderate: {
+      method: "PATCH" as const,
+      path: "/api/reviews/:id/moderate" as const,
+      input: z.object({ isApproved: z.boolean() }),
+      responses: { 200: z.custom<typeof reviews.$inferSelect>() },
+    },
+    average: {
+      method: "GET" as const,
+      path: "/api/reviews/barber/:barberId/average" as const,
+      responses: { 200: z.object({ barberId: z.number(), averageRating: z.number(), count: z.number() }) },
+    },
+  },
+  waitlist: {
+    list: {
+      method: "GET" as const,
+      path: "/api/waitlist" as const,
+      responses: { 200: z.array(z.custom<typeof waitlist.$inferSelect>()) },
+    },
+    join: {
+      method: "POST" as const,
+      path: "/api/waitlist" as const,
+      input: z.object({ serviceId: z.number(), date: z.string() }),
+      responses: { 201: z.custom<typeof waitlist.$inferSelect>() },
+    },
+    claim: {
+      method: "PATCH" as const,
+      path: "/api/waitlist/:id/claim" as const,
+      responses: { 200: z.custom<typeof waitlist.$inferSelect>() },
+    },
+  },
+  inventory: {
+    list: {
+      method: "GET" as const,
+      path: "/api/inventory" as const,
+      responses: { 200: z.array(z.custom<typeof inventory.$inferSelect>()) },
+    },
+    create: {
+      method: "POST" as const,
+      path: "/api/inventory" as const,
+      input: z.object({
+        productName: z.string().min(1),
+        stockQuantity: z.number().int().min(0),
+        price: z.number().int().min(0),
+      }),
+      responses: { 201: z.custom<typeof inventory.$inferSelect>() },
+    },
+    update: {
+      method: "PATCH" as const,
+      path: "/api/inventory/:id" as const,
+      input: z.object({
+        productName: z.string().min(1).optional(),
+        stockQuantity: z.number().int().min(0).optional(),
+        price: z.number().int().min(0).optional(),
+      }),
+      responses: { 200: z.custom<typeof inventory.$inferSelect>() },
+    },
+    remove: {
+      method: "DELETE" as const,
+      path: "/api/inventory/:id" as const,
+      responses: { 200: z.object({ ok: z.boolean() }) },
+    },
+    sale: {
+      method: "POST" as const,
+      path: "/api/inventory/:id/sale" as const,
+      input: z.object({ quantity: z.number().int().min(1) }),
+      responses: { 200: z.any() },
+    },
+  },
+  analytics: {
+    dashboard: {
+      method: "GET" as const,
+      path: "/api/analytics/dashboard" as const,
+      responses: { 200: z.any() },
+    },
+  },
+  aiAssistant: {
+    suggest: {
+      method: "POST" as const,
+      path: "/api/ai/suggest" as const,
+      input: z.object({ prompt: z.string().min(1) }),
+      responses: { 200: z.object({ answer: z.string() }) },
+    },
+  },
+  referrals: {
+    myCode: {
+      method: "GET" as const,
+      path: "/api/referrals/code" as const,
+      responses: { 200: z.custom<typeof referralCodes.$inferSelect>() },
+    },
+    apply: {
+      method: "POST" as const,
+      path: "/api/referrals/apply" as const,
+      input: z.object({ code: z.string().min(3) }),
+      responses: { 200: z.custom<typeof referrals.$inferSelect>() },
+    },
+  },
+  gallery: {
+    list: {
+      method: "GET" as const,
+      path: "/api/gallery/:barberId" as const,
+      responses: { 200: z.array(z.custom<typeof barberGallery.$inferSelect>()) },
+    },
+    add: {
+      method: "POST" as const,
+      path: "/api/gallery" as const,
+      input: z.object({
+        barberId: z.coerce.number().optional(),
+        imageUrl: z.string().min(1),
+        caption: z.string().optional(),
+      }),
+      responses: { 201: z.custom<typeof barberGallery.$inferSelect>() },
+    },
+    update: {
+      method: "PATCH" as const,
+      path: "/api/gallery/:id" as const,
+      input: z.object({
+        imageUrl: z.string().min(1).optional(),
+        caption: z.string().optional(),
+      }),
+      responses: { 200: z.custom<typeof barberGallery.$inferSelect>() },
+    },
+    remove: {
+      method: "DELETE" as const,
+      path: "/api/gallery/:id" as const,
+      responses: { 200: z.object({ ok: z.boolean() }) },
+    },
+  },
+  landingMedia: {
+    get: {
+      method: "GET" as const,
+      path: "/api/landing-media" as const,
+      responses: {
+        200: z.object({
+          photos: z.array(z.object({ id: z.string(), title: z.string(), imageUrl: z.string() })),
+          videos: z.array(z.object({ id: z.string(), title: z.string(), videoUrl: z.string() })),
+        }),
+      },
+    },
+    save: {
+      method: "POST" as const,
+      path: "/api/admin/landing-media" as const,
+      input: z.object({
+        photos: z.array(z.object({ id: z.string(), title: z.string(), imageUrl: z.string() })),
+        videos: z.array(z.object({ id: z.string(), title: z.string(), videoUrl: z.string() })),
+      }),
+      responses: { 200: z.object({ ok: z.boolean() }) },
+    },
+  },
+  customerTags: {
+    list: {
+      method: "GET" as const,
+      path: "/api/customer-tags" as const,
+      responses: { 200: z.array(z.custom<typeof customerTags.$inferSelect>()) },
+    },
+    create: {
+      method: "POST" as const,
+      path: "/api/customer-tags" as const,
+      input: z.object({ name: z.string().min(1) }),
+      responses: { 201: z.custom<typeof customerTags.$inferSelect>() },
+    },
+    assign: {
+      method: "POST" as const,
+      path: "/api/customer-tags/assign" as const,
+      input: z.object({ userId: z.number(), tagId: z.number() }),
+      responses: { 200: z.object({ ok: z.boolean() }) },
+    },
+    usersByTag: {
+      method: "GET" as const,
+      path: "/api/customer-tags/:tagId/users" as const,
+      responses: { 200: z.array(z.any()) },
+    },
+  },
+  campaigns: {
+    list: {
+      method: "GET" as const,
+      path: "/api/campaigns" as const,
+      responses: { 200: z.array(z.custom<typeof marketingCampaigns.$inferSelect>()) },
+    },
+    send: {
+      method: "POST" as const,
+      path: "/api/campaigns" as const,
+      input: z.object({
+        title: z.string().min(1),
+        message: z.string().min(1),
+        channel: z.enum(["email", "sms"]).default("email"),
+        targetTagId: z.number().optional(),
+      }),
+      responses: { 201: z.custom<typeof marketingCampaigns.$inferSelect>() },
+    },
+  },
+  geo: {
+    nearest: {
+      method: "GET" as const,
+      path: "/api/geo/nearest-branch" as const,
+      responses: { 200: z.any() },
+    },
+  },
+  cancellationPolicy: {
+    get: {
+      method: "GET" as const,
+      path: "/api/cancellation-policy" as const,
+      responses: { 200: z.any() },
+    },
+    set: {
+      method: "POST" as const,
+      path: "/api/cancellation-policy" as const,
+      input: z.object({ freeCancelHours: z.number().int().min(0), lateFee: z.number().int().min(0) }),
+      responses: { 200: z.object({ ok: z.boolean() }) },
+    },
+  },
+  audit: {
+    list: {
+      method: "GET" as const,
+      path: "/api/audit-logs" as const,
+      responses: { 200: z.array(z.custom<typeof auditLogs.$inferSelect>()) },
+    },
+  },
   settings: {
     public: {
       method: "GET" as const,
@@ -454,3 +813,10 @@ export type NotificationType = typeof notifications.$inferSelect;
 export type AppointmentEarningType = typeof appointmentEarnings.$inferSelect;
 export type GuestNotificationType = typeof guestNotifications.$inferSelect;
 export type ExpenseType = typeof expenses.$inferSelect;
+export type ReviewType = typeof reviews.$inferSelect;
+export type WaitlistType = typeof waitlist.$inferSelect;
+export type InventoryType = typeof inventory.$inferSelect;
+export type BarberGalleryType = typeof barberGallery.$inferSelect;
+export type ReferralType = typeof referrals.$inferSelect;
+export type CustomerTagType = typeof customerTags.$inferSelect;
+export type MarketingCampaignType = typeof marketingCampaigns.$inferSelect;

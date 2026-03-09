@@ -36,12 +36,13 @@ export function Navbar() {
             <select
               aria-label={t("language")}
               value={lang}
-              onChange={(e) => setLang(e.target.value as "en" | "tr" | "sq")}
-              className="h-9 rounded-md border border-zinc-300 bg-white px-2 text-sm text-zinc-700 hidden md:block"
+              onChange={(e) => setLang(e.target.value as "en" | "tr" | "sq" | "it")}
+              className="h-9 w-[76px] sm:w-auto rounded-md border border-zinc-300 bg-white px-2 text-sm text-zinc-700"
             >
               <option value="en">{t("english")}</option>
               <option value="tr">{t("turkish")}</option>
               <option value="sq">{t("albanian")}</option>
+              <option value="it">{t("italian")}</option>
             </select>
             <Button
               type="button"

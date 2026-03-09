@@ -15,7 +15,7 @@ export function useBranches() {
 export function useCreateBranch() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: Omit<BranchType, "id">) => {
+    mutationFn: async (data: { name: string; location: string; latitude?: number | null; longitude?: number | null }) => {
       const res = await fetch(api.branches.create.path, {
         method: api.branches.create.method,
         headers: { "Content-Type": "application/json" },

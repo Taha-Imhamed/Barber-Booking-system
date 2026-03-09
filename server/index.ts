@@ -2,11 +2,13 @@
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
+import rateLimit from "express-rate-limit";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { pool } from "./db";
 import { initNotifierDiagnostics } from "./notifier";
+import { startSchedulers } from "./scheduler";
 
 const app = express();
 const httpServer = createServer(app);
@@ -43,7 +45,7 @@ app.use(
 
 app.use(
   express.json({
-    limit: "8mb",
+    limit: "20mb",
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
@@ -52,12 +54,29 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
+app.use(
+  "/api",
+  rateLimit({
+    windowMs: 60 * 1000,
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: "Too many requests, please try again in a minute." },
+  }),
+);
+
 async function ensureRuntimeSchema() {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id text`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider text`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified boolean`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_available boolean`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS unavailable_hours text`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS no_show_count integer`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_flagged_no_show boolean`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS booking_credit_cents integer`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_permissions text`);
+  await pool.query(`ALTER TABLE branches ADD COLUMN IF NOT EXISTS latitude real`);
+  await pool.query(`ALTER TABLE branches ADD COLUMN IF NOT EXISTS longitude real`);
   await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS proposed_date timestamp`);
   await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS proposed_by_role text`);
   await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS proposed_status text`);
@@ -66,16 +85,28 @@ async function ensureRuntimeSchema() {
   await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS payment_status text`);
   await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS prepaid_amount integer`);
   await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS payment_reference text`);
+  await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS total_duration_minutes integer`);
+  await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS total_price integer`);
+  await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS cancelled_at timestamp`);
+  await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS no_show_marked_at timestamp`);
   await pool.query(`UPDATE users SET auth_provider = COALESCE(auth_provider, 'local')`);
   await pool.query(`UPDATE users SET email_verified = COALESCE(email_verified, false)`);
   await pool.query(`UPDATE users SET is_available = COALESCE(is_available, true)`);
   await pool.query(`UPDATE users SET unavailable_hours = COALESCE(unavailable_hours, '[]')`);
+  await pool.query(`UPDATE users SET no_show_count = COALESCE(no_show_count, 0)`);
+  await pool.query(`UPDATE users SET is_flagged_no_show = COALESCE(is_flagged_no_show, false)`);
+  await pool.query(`UPDATE users SET booking_credit_cents = COALESCE(booking_credit_cents, 0)`);
+  await pool.query(`UPDATE users SET admin_permissions = COALESCE(admin_permissions, '[]')`);
   await pool.query(`UPDATE users SET email_verified = true WHERE role IN ('admin', 'barber')`);
   await pool.query(`ALTER TABLE users ALTER COLUMN auth_provider SET DEFAULT 'local'`);
   await pool.query(`ALTER TABLE users ALTER COLUMN auth_provider SET NOT NULL`);
   await pool.query(`ALTER TABLE users ALTER COLUMN email_verified SET DEFAULT false`);
   await pool.query(`ALTER TABLE users ALTER COLUMN is_available SET DEFAULT true`);
   await pool.query(`ALTER TABLE users ALTER COLUMN unavailable_hours SET DEFAULT '[]'`);
+  await pool.query(`ALTER TABLE users ALTER COLUMN no_show_count SET DEFAULT 0`);
+  await pool.query(`ALTER TABLE users ALTER COLUMN is_flagged_no_show SET DEFAULT false`);
+  await pool.query(`ALTER TABLE users ALTER COLUMN booking_credit_cents SET DEFAULT 0`);
+  await pool.query(`ALTER TABLE users ALTER COLUMN admin_permissions SET DEFAULT '[]'`);
   await pool.query(`UPDATE appointments SET proposed_status = COALESCE(proposed_status, 'none')`);
   await pool.query(`UPDATE appointments SET is_deleted = COALESCE(is_deleted, false)`);
   await pool.query(`UPDATE appointments SET payment_method = COALESCE(payment_method, 'cash_on_arrival')`);
@@ -189,6 +220,139 @@ async function ensureRuntimeSchema() {
       updated_at timestamp DEFAULT now()
     )
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS appointment_services (
+      id serial PRIMARY KEY,
+      appointment_id integer NOT NULL REFERENCES appointments(id),
+      service_id integer NOT NULL REFERENCES services(id),
+      duration_minutes integer NOT NULL,
+      price integer NOT NULL
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS appointment_reminders (
+      id serial PRIMARY KEY,
+      appointment_id integer NOT NULL REFERENCES appointments(id),
+      reminder_type text NOT NULL,
+      channel text NOT NULL DEFAULT 'email',
+      sent_at timestamp DEFAULT now()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS reviews (
+      id serial PRIMARY KEY,
+      barber_id integer NOT NULL REFERENCES users(id),
+      client_id integer NOT NULL REFERENCES users(id),
+      appointment_id integer NOT NULL REFERENCES appointments(id),
+      rating integer NOT NULL,
+      comment text,
+      is_approved boolean DEFAULT false,
+      created_at timestamp DEFAULT now()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS waitlist (
+      id serial PRIMARY KEY,
+      service_id integer NOT NULL REFERENCES services(id),
+      date timestamp NOT NULL,
+      client_id integer NOT NULL REFERENCES users(id),
+      status text NOT NULL DEFAULT 'waiting',
+      created_at timestamp DEFAULT now()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS inventory (
+      id serial PRIMARY KEY,
+      product_name text NOT NULL,
+      stock_quantity integer NOT NULL DEFAULT 0,
+      price integer NOT NULL DEFAULT 0,
+      last_updated timestamp DEFAULT now()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS inventory_sales (
+      id serial PRIMARY KEY,
+      inventory_id integer NOT NULL REFERENCES inventory(id),
+      quantity integer NOT NULL,
+      total_amount integer NOT NULL,
+      sold_by_user_id integer NOT NULL REFERENCES users(id),
+      created_at timestamp DEFAULT now()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS referral_codes (
+      id serial PRIMARY KEY,
+      user_id integer NOT NULL REFERENCES users(id),
+      code text NOT NULL UNIQUE,
+      created_at timestamp DEFAULT now()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS referrals (
+      id serial PRIMARY KEY,
+      referrer_id integer NOT NULL REFERENCES users(id),
+      referred_user_id integer NOT NULL REFERENCES users(id),
+      reward_given boolean DEFAULT false,
+      created_at timestamp DEFAULT now()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS barber_gallery (
+      id serial PRIMARY KEY,
+      barber_id integer NOT NULL REFERENCES users(id),
+      image_url text NOT NULL,
+      caption text,
+      created_at timestamp DEFAULT now()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id serial PRIMARY KEY,
+      user_id integer REFERENCES users(id),
+      action text NOT NULL,
+      metadata text,
+      timestamp timestamp DEFAULT now()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS customer_tags (
+      id serial PRIMARY KEY,
+      name text NOT NULL UNIQUE,
+      created_at timestamp DEFAULT now()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_tags (
+      id serial PRIMARY KEY,
+      user_id integer NOT NULL REFERENCES users(id),
+      tag_id integer NOT NULL REFERENCES customer_tags(id),
+      created_at timestamp DEFAULT now()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS marketing_campaigns (
+      id serial PRIMARY KEY,
+      title text NOT NULL,
+      message text NOT NULL,
+      sent_by_user_id integer NOT NULL REFERENCES users(id),
+      channel text NOT NULL DEFAULT 'email',
+      target_tag_id integer REFERENCES customer_tags(id),
+      sent_at timestamp DEFAULT now()
+    )
+  `);
 }
 
 export function log(message: string, source = "express") {
@@ -231,6 +395,7 @@ app.use((req, res, next) => {
 (async () => {
   initNotifierDiagnostics();
   await ensureRuntimeSchema();
+  startSchedulers();
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

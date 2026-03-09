@@ -5,6 +5,7 @@ import { api } from "@shared/routes";
 import { z } from "zod";
 import { compare, hash } from "bcryptjs";
 import crypto from "crypto";
+import os from "os";
 import { sendAppointmentUpdateNotification, sendEmail, sendSms } from "./notifier";
 import { pool } from "./db";
 
@@ -122,6 +123,25 @@ export async function registerRoutes(
     }
   }
 
+  async function persistAudit(userId: number | null, action: string, metadata?: Record<string, unknown>) {
+    await pool.query(
+      "insert into audit_logs (user_id, action, metadata) values ($1, $2, $3)",
+      [userId, action, metadata ? JSON.stringify(metadata) : null],
+    );
+  }
+
+  function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+    const R = 6371;
+    const toRad = (d: number) => (d * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
   function extractRoutes(obj: unknown, out: { method: string; path: string }[] = []): { method: string; path: string }[] {
     if (!obj || typeof obj !== "object") return out;
     for (const value of Object.values(obj as Record<string, unknown>)) {
@@ -154,6 +174,49 @@ export async function registerRoutes(
     return user;
   }
 
+  const ADMIN_PERMISSIONS = [
+    "appointments",
+    "barbers",
+    "services",
+    "reports",
+    "timetable",
+    "finance",
+    "chat",
+    "wallDisplay",
+    "gallery",
+    "users",
+    "growth",
+    "developer",
+    "manage_admins",
+  ] as const;
+
+  function getAdminPermissions(user: any): string[] {
+    try {
+      const parsed = JSON.parse(user?.adminPermissions ?? "[]");
+      return Array.isArray(parsed) ? parsed.map((p) => String(p)) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function hasAdminPermission(user: any, permission: string): boolean {
+    if (!user || user.role !== "admin") return false;
+    const perms = getAdminPermissions(user);
+    // Empty permissions means full-access main admin.
+    if (perms.length === 0) return true;
+    return perms.includes(permission);
+  }
+
+  async function requireAdminPermission(req: any, res: any, permission: string) {
+    const admin = await requireAdmin(req, res);
+    if (!admin) return null;
+    if (!hasAdminPermission(admin, permission)) {
+      res.status(403).json({ message: "No access to this section." });
+      return null;
+    }
+    return admin;
+  }
+
   async function seed() {
     let branchItems = await storage.getBranches();
     if (branchItems.length === 0) {
@@ -184,6 +247,7 @@ export async function registerRoutes(
         photoUrl: null,
         isAvailable: true,
         unavailableHours: "[]",
+        adminPermissions: "[]",
       });
     }
 
@@ -337,6 +401,7 @@ export async function registerRoutes(
         photoUrl: input.photoUrl ?? null,
         isAvailable: true,
         unavailableHours: "[]",
+        adminPermissions: "[]",
       });
       if (user.email && !user.emailVerified) {
         await createAndSendVerificationEmail(user.id, user.email, user.firstName);
@@ -462,6 +527,7 @@ export async function registerRoutes(
           photoUrl: profile.picture ?? null,
           isAvailable: true,
           unavailableHours: "[]",
+          adminPermissions: "[]",
         });
       } else {
         if (user.role !== "client") {
@@ -480,6 +546,14 @@ export async function registerRoutes(
     } catch {
       res.status(400).json({ message: "Google sign-in failed." });
     }
+  });
+
+  app.get(api.auth.facebook.path, async (_req, res) => {
+    return res.redirect("/auth?provider=facebook_not_configured");
+  });
+
+  app.get(api.auth.apple.path, async (_req, res) => {
+    return res.redirect("/auth?provider=apple_not_configured");
   });
 
   app.get(api.auth.verifyEmail.path, async (req, res) => {
@@ -515,16 +589,24 @@ export async function registerRoutes(
   });
 
   app.post(api.branches.create.path, async (req, res) => {
+    const admin = await requireAdminPermission(req, res, "barbers");
+    if (!admin) return;
     try {
       const input = api.branches.create.input.parse(req.body);
       const branch = await storage.createBranch(input);
       res.status(201).json(branch);
-    } catch {
-      res.status(400).json({ message: "Bad Request" });
+    } catch (error: any) {
+      const message =
+        process.env.NODE_ENV === "development"
+          ? error?.message || "Bad Request"
+          : "Bad Request";
+      res.status(400).json({ message });
     }
   });
 
   app.delete(api.branches.delete.path, async (req, res) => {
+    const admin = await requireAdminPermission(req, res, "barbers");
+    if (!admin) return;
     try {
       const id = Number.parseInt(req.params.id, 10);
       const ok = await storage.deleteBranch(id);
@@ -540,6 +622,8 @@ export async function registerRoutes(
   });
 
   app.post(api.services.create.path, async (req, res) => {
+    const admin = await requireAdminPermission(req, res, "services");
+    if (!admin) return;
     try {
       const input = api.services.create.input.parse(req.body);
       const service = await storage.createService(input);
@@ -550,6 +634,8 @@ export async function registerRoutes(
   });
 
   app.patch(api.services.update.path, async (req, res) => {
+    const admin = await requireAdminPermission(req, res, "services");
+    if (!admin) return;
     try {
       const id = Number.parseInt(req.params.id, 10);
       const input = api.services.update.input.parse(req.body);
@@ -566,6 +652,8 @@ export async function registerRoutes(
   });
 
   app.post(api.barbers.create.path, async (req, res) => {
+    const admin = await requireAdminPermission(req, res, "barbers");
+    if (!admin) return;
     try {
       const input = api.barbers.create.input.parse(req.body);
       const hashedPassword = input.password ? await hash(input.password, 10) : null;
@@ -587,6 +675,7 @@ export async function registerRoutes(
         photoUrl: input.photoUrl ?? null,
         isAvailable: true,
         unavailableHours: "[]",
+        adminPermissions: "[]",
       });
       res.status(201).json(barber);
     } catch {
@@ -595,6 +684,8 @@ export async function registerRoutes(
   });
 
   app.patch(api.barbers.update.path, async (req, res) => {
+    const admin = await requireAdminPermission(req, res, "barbers");
+    if (!admin) return;
     try {
       const id = Number.parseInt(req.params.id, 10);
       const input = api.barbers.update.input.parse(req.body);
@@ -612,16 +703,27 @@ export async function registerRoutes(
   });
 
   app.delete(api.barbers.delete.path, async (req, res) => {
+    const admin = await requireAdminPermission(req, res, "barbers");
+    if (!admin) return;
     try {
       const adminId = req.session.userId;
       if (!adminId) return res.status(401).json({ message: "Not logged in" });
       const admin = await storage.getUser(adminId);
       if (!admin || admin.role !== "admin") return res.status(403).json({ message: "Admin only" });
       const id = Number.parseInt(req.params.id, 10);
+      const barber = await storage.getUser(id);
+      if (!barber || barber.role !== "barber") return res.status(404).json({ message: "Barber not found" });
+      const barberAppointments = await storage.getAppointmentsByBarber(id);
+      const activeCount = barberAppointments.filter((a) => ["pending", "accepted", "postponed"].includes(String(a.status))).length;
+      if (activeCount > 0) {
+        return res.status(400).json({
+          message: `Cannot delete barber while ${activeCount} active request(s) exist. Complete/cancel those appointments first.`,
+        });
+      }
       const ok = await storage.deleteBarber(id);
       res.json({ ok });
     } catch {
-      res.status(400).json({ message: "Cannot delete barber with related data. Remove related appointments first." });
+      res.status(400).json({ message: "Cannot delete barber right now. Please try again." });
     }
   });
 
@@ -651,10 +753,18 @@ export async function registerRoutes(
 
       const allServices = await storage.getServices();
       const serviceById = new Map(allServices.map((s) => [Number(s.id), s]));
-      const selectedService = serviceById.get(Number(input.serviceId));
-      if (!selectedService) {
+      const requestedServiceIds = Array.isArray(req.body.serviceIds)
+        ? req.body.serviceIds.map((v: unknown) => Number(v)).filter((v: number) => Number.isFinite(v))
+        : [Number(input.serviceId)];
+      const selectedServices = requestedServiceIds
+        .map((id: number) => serviceById.get(id))
+        .filter(Boolean) as (typeof allServices)[number][];
+      if (selectedServices.length === 0) {
         return res.status(400).json({ message: "Invalid service." });
       }
+      const selectedService = selectedServices[0];
+      const totalDuration = selectedServices.reduce((sum, s) => sum + (s.durationMinutes ?? 0), 0);
+      const totalPrice = selectedServices.reduce((sum, s) => sum + (s.price ?? 0), 0);
 
       const barber = await storage.getUser(input.barberId);
       if (!barber || barber.role !== "barber") {
@@ -679,7 +789,7 @@ export async function registerRoutes(
 
       const barberAppointments = await storage.getAppointmentsByBarber(input.barberId);
       const requestedStart = new Date(input.appointmentDate);
-      const requestedLockMinutes = Math.max(selectedService.durationMinutes, minimumBarberLockMinutes);
+      const requestedLockMinutes = Math.max(totalDuration || selectedService.durationMinutes, minimumBarberLockMinutes);
       const requestedEnd = new Date(requestedStart.getTime() + requestedLockMinutes * 60 * 1000);
       const blockedStatuses = new Set(["pending", "accepted", "postponed"]);
       const overlappingAppointment = barberAppointments.find((a) => {
@@ -701,6 +811,9 @@ export async function registerRoutes(
       }
 
       const clientUser = input.clientId ? await storage.getUser(input.clientId) : undefined;
+      if (clientUser?.isFlaggedNoShow) {
+        return res.status(403).json({ message: "Booking restricted. Please contact support due to repeated no-shows." });
+      }
       const appointment = await storage.createAppointment({
         clientId: input.clientId ?? null,
         guestFirstName: input.guestFirstName ?? clientUser?.firstName ?? null,
@@ -719,8 +832,19 @@ export async function registerRoutes(
         paymentStatus: (input.paymentStatus as string | undefined) ?? "unpaid",
         prepaidAmount: Math.max(0, Math.floor(Number(input.prepaidAmount ?? 0))),
         paymentReference: (input.paymentReference as string | undefined) ?? null,
+        totalDurationMinutes: totalDuration,
+        totalPrice,
         isDeleted: false,
+        cancelledAt: null,
+        noShowMarkedAt: null,
       });
+
+      for (const service of selectedServices) {
+        await pool.query(
+          "insert into appointment_services (appointment_id, service_id, duration_minutes, price) values ($1, $2, $3, $4)",
+          [appointment.id, service.id, service.durationMinutes, service.price],
+        );
+      }
 
       await storage.createNotification({
         userId: input.barberId,
@@ -732,6 +856,8 @@ export async function registerRoutes(
       const clientName = `${input.guestFirstName ?? clientUser?.firstName ?? ""} ${input.guestLastName ?? clientUser?.lastName ?? ""}`.trim() || "Client";
       const toEmailRaw = input.guestEmail ?? clientUser?.email ?? null;
       const toEmail = typeof toEmailRaw === "string" ? toEmailRaw.trim() : null;
+      const toPhoneRaw = input.guestPhone ?? clientUser?.phone ?? null;
+      const toPhone = typeof toPhoneRaw === "string" ? normalizePhone(toPhoneRaw) : null;
       const appointmentDate = new Date(input.appointmentDate);
       if (toEmail) {
         const appointmentDateText = appointmentDate.toLocaleDateString();
@@ -760,6 +886,7 @@ export async function registerRoutes(
         ].join("\n");
 
         const emailResult = await sendEmail(toEmail, subject, fallbackText, {
+          event_type: "reservation_requested",
           email: toEmail,
           client_email: toEmail,
           client_name: clientName,
@@ -785,6 +912,27 @@ export async function registerRoutes(
         }
       } else {
         console.warn("[appointments.create] no recipient email on reservation");
+      }
+
+      if (toPhone) {
+        const appointmentDateText = appointmentDate.toLocaleDateString();
+        const appointmentTimeText = appointmentDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        const smsMessage = `Istanbul Salon: Hi ${clientName}, your reservation request was received for ${appointmentDateText} ${appointmentTimeText}. We will confirm shortly.`;
+        const smsResult = await sendSms(toPhone, smsMessage);
+        if (!smsResult.sent) {
+          console.warn("[appointments.create] reservation sms failed", {
+            toPhone,
+            provider: smsResult.provider,
+            error: smsResult.error,
+          });
+        } else {
+          console.log("[appointments.create] reservation sms sent", {
+            toPhone,
+            provider: smsResult.provider,
+          });
+        }
+      } else {
+        console.warn("[appointments.create] no recipient phone on reservation");
       }
 
       res.status(201).json(appointment);
@@ -857,6 +1005,18 @@ export async function registerRoutes(
       let appointment = appointmentBeforeUpdate;
       const actorId = req.session.userId;
       const actor = actorId ? await storage.getUser(actorId) : undefined;
+      if (status === "cancelled") {
+        const freeCancelHoursSetting = await storage.getAppSetting("cancellation_free_hours");
+        const lateFeeSetting = await storage.getAppSetting("cancellation_late_fee");
+        const freeCancelHours = Number.parseInt(freeCancelHoursSetting ?? "3", 10);
+        const lateFee = Number.parseInt(lateFeeSetting ?? "10", 10);
+        const hoursToAppointment = (new Date(appointmentBeforeUpdate.appointmentDate).getTime() - Date.now()) / (1000 * 60 * 60);
+        if (hoursToAppointment < freeCancelHours) {
+          return res.status(400).json({
+            message: `Late cancellation fee applies: ${lateFee}. Free cancellation is allowed up to ${freeCancelHours} hours.`,
+          });
+        }
+      }
       const allServices = await storage.getServices();
       const serviceById = new Map(allServices.map((s) => [Number(s.id), s]));
       const currentService = serviceById.get(Number(appointmentBeforeUpdate.serviceId));
@@ -917,6 +1077,8 @@ export async function registerRoutes(
           proposedStatus: status === "accepted" || status === "completed" ? "none" : appointmentBeforeUpdate.proposedStatus,
           proposedDate: status === "accepted" || status === "completed" ? null : appointmentBeforeUpdate.proposedDate,
           proposedByRole: status === "accepted" || status === "completed" ? null : appointmentBeforeUpdate.proposedByRole,
+          cancelledAt: status === "cancelled" ? new Date() : appointmentBeforeUpdate.cancelledAt,
+          noShowMarkedAt: status === "no_show" ? new Date() : appointmentBeforeUpdate.noShowMarkedAt,
         });
       }
 
@@ -970,30 +1132,167 @@ export async function registerRoutes(
         }
       }
 
+      if (status === "no_show" && appointment.clientId) {
+        const client = await storage.getUser(appointment.clientId);
+        if (client) {
+          const nextCount = (client.noShowCount ?? 0) + 1;
+          await storage.updateUser(client.id, {
+            noShowCount: nextCount,
+            isFlaggedNoShow: nextCount >= 3,
+          });
+          if (nextCount >= 3) {
+            const users = await storage.getUsers();
+            const admins = users.filter((u) => u.role === "admin");
+            for (const admin of admins) {
+              await storage.createNotification({
+                userId: admin.id,
+                message: `Client ${client.firstName} ${client.lastName} reached ${nextCount} no-shows and is now flagged.`,
+                isRead: false,
+              });
+            }
+          }
+        }
+      }
+
+      if (["cancelled", "rejected"].includes(status)) {
+        const waitlistRows = await pool.query(
+          "select * from waitlist where service_id = $1 and date = $2 and status = 'waiting' order by created_at asc",
+          [appointment.serviceId, appointment.appointmentDate],
+        );
+        for (const row of waitlistRows.rows) {
+          await pool.query("update waitlist set status = 'notified' where id = $1", [row.id]);
+          await storage.createNotification({
+            userId: row.client_id,
+            message: "A slot opened up for your waitlist request. Confirm quickly to claim it.",
+            isRead: false,
+          });
+        }
+      }
+
+      await persistAudit(actor?.id ?? null, "appointment_status_changed", {
+        appointmentId: appointment.id,
+        from: appointmentBeforeUpdate.status,
+        to: status,
+      });
+
       const appointmentClient = appointment.clientId ? await storage.getUser(appointment.clientId) : undefined;
       const notifyEmail = appointment.guestEmail ?? appointmentBeforeUpdate?.guestEmail ?? appointmentClient?.email ?? null;
       const notifyPhone = appointment.guestPhone ?? appointmentBeforeUpdate?.guestPhone ?? appointmentClient?.phone ?? null;
 
       if (notifyPhone || notifyEmail) {
-        const notifyResult = await sendAppointmentUpdateNotification({
-          email: notifyEmail,
-          phone: notifyPhone,
-          subject: "Appointment status update",
-          message: statusMessage,
-        });
-        if (!notifyResult.email.sent && notifyEmail) {
-          console.warn("[appointments.updateStatus] email notification failed", {
+        if (status === "accepted" && notifyEmail) {
+          const branch = (await storage.getBranches()).find((b) => Number(b.id) === Number(appointment.branchId));
+          const service = (await storage.getServices()).find((s) => Number(s.id) === Number(appointment.serviceId));
+          const serviceRows = await pool.query(
+            `
+            select s.name, aps.price, aps.duration_minutes
+            from appointment_services aps
+            join services s on s.id = aps.service_id
+            where aps.appointment_id = $1
+            order by aps.id asc
+            `,
+            [appointment.id],
+          );
+          const normalizedServiceRows = (serviceRows.rows ?? []).map((row: any) => ({
+            name: String(row?.name ?? "").trim(),
+            price: Number(row?.price ?? 0),
+            durationMinutes: Number(row?.duration_minutes ?? 0),
+          }));
+          const fallbackServiceName = service?.name ?? String(appointment.serviceId);
+          const servicesSummary =
+            normalizedServiceRows.length > 0
+              ? normalizedServiceRows.map((r) => `${r.name} ($${r.price}, ${r.durationMinutes}m)`).join(", ")
+              : fallbackServiceName;
+          const computedTotalPrice =
+            appointment.totalPrice != null
+              ? Number(appointment.totalPrice)
+              : normalizedServiceRows.length > 0
+                ? normalizedServiceRows.reduce((sum, r) => sum + r.price, 0)
+                : Number(service?.price ?? 0);
+          const computedTotalDuration =
+            appointment.totalDurationMinutes != null
+              ? Number(appointment.totalDurationMinutes)
+              : normalizedServiceRows.length > 0
+                ? normalizedServiceRows.reduce((sum, r) => sum + r.durationMinutes, 0)
+                : Number(service?.durationMinutes ?? 0);
+          const barberUser = await storage.getUser(appointment.barberId);
+          const clientName =
+            `${appointment.guestFirstName ?? appointmentClient?.firstName ?? ""} ${appointment.guestLastName ?? appointmentClient?.lastName ?? ""}`.trim() ||
+            "Client";
+          const barberName = `${barberUser?.firstName ?? ""} ${barberUser?.lastName ?? ""}`.trim() || "Your barber";
+          const dateText = new Date(appointment.appointmentDate).toLocaleDateString();
+          const timeText = new Date(appointment.appointmentDate).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+          const subject = "Istanbul Salon - Reservation Confirmed";
+          const message = [
+            `Hello ${clientName},`,
+            "",
+            "Great news. Your reservation has been confirmed.",
+            "",
+            `Services: ${servicesSummary}`,
+            `Barber: ${barberName}`,
+            `Branch: ${branch?.name ?? appointment.branchId}`,
+            `Date: ${dateText}`,
+            `Time: ${timeText}`,
+            `Total Duration: ${computedTotalDuration} min`,
+            `Total Price: $${computedTotalPrice}`,
+            "",
+            "We look forward to seeing you.",
+            "",
+            "Istanbul Salon Team",
+          ].join("\n");
+          const emailResult = await sendEmail(notifyEmail, subject, message, {
+            event_type: "reservation_confirmed",
+            client_email: notifyEmail,
+            client_name: clientName,
+            service_name: fallbackServiceName,
+            services_summary: servicesSummary,
+            barber_name: barberName,
+            branch_name: branch?.name ?? String(appointment.branchId),
+            appointment_date: dateText,
+            appointment_time: timeText,
+            total_duration: computedTotalDuration,
+            total_price: computedTotalPrice,
+            salon_phone: salonPhone,
+            salon_address: salonAddress,
+          });
+          if (!emailResult.sent) {
+            console.warn("[appointments.updateStatus] accepted email notification failed", {
+              email: notifyEmail,
+              provider: emailResult.provider,
+              error: emailResult.error,
+            });
+          }
+          if (notifyPhone) {
+            const smsResult = await sendSms(notifyPhone, statusMessage);
+            if (!smsResult.sent) {
+              console.warn("[appointments.updateStatus] sms notification failed", {
+                phone: notifyPhone,
+                provider: smsResult.provider,
+                error: smsResult.error,
+              });
+            }
+          }
+        } else {
+          const notifyResult = await sendAppointmentUpdateNotification({
             email: notifyEmail,
-            provider: notifyResult.email.provider,
-            error: notifyResult.email.error,
-          });
-        }
-        if (!notifyResult.sms.sent && notifyPhone) {
-          console.warn("[appointments.updateStatus] sms notification failed", {
             phone: notifyPhone,
-            provider: notifyResult.sms.provider,
-            error: notifyResult.sms.error,
+            subject: "Appointment status update",
+            message: statusMessage,
           });
+          if (!notifyResult.email.sent && notifyEmail) {
+            console.warn("[appointments.updateStatus] email notification failed", {
+              email: notifyEmail,
+              provider: notifyResult.email.provider,
+              error: notifyResult.email.error,
+            });
+          }
+          if (!notifyResult.sms.sent && notifyPhone) {
+            console.warn("[appointments.updateStatus] sms notification failed", {
+              phone: notifyPhone,
+              provider: notifyResult.sms.provider,
+              error: notifyResult.sms.error,
+            });
+          }
         }
       }
 
@@ -1141,10 +1440,8 @@ export async function registerRoutes(
 
   app.post(api.admin.sendMessage.path, async (req, res) => {
     try {
-      const adminId = req.session.userId;
-      if (!adminId) return res.status(401).json({ message: "Not logged in" });
-      const admin = await storage.getUser(adminId);
-      if (!admin || admin.role !== "admin") return res.status(403).json({ message: "Admin only" });
+      const admin = await requireAdminPermission(req, res, "appointments");
+      if (!admin) return;
 
       const input = api.admin.sendMessage.input.parse(req.body);
       const appointment = await storage.getAppointment(input.appointmentId);
@@ -1194,24 +1491,21 @@ export async function registerRoutes(
 
   app.post(api.admin.deleteAppointments.path, async (req, res) => {
     try {
-      const adminId = req.session.userId;
-      if (!adminId) return res.status(401).json({ message: "Not logged in" });
-      const admin = await storage.getUser(adminId);
-      if (!admin || admin.role !== "admin") return res.status(403).json({ message: "Admin only" });
+      const admin = await requireAdminPermission(req, res, "appointments");
+      if (!admin) return;
       const { ids } = api.admin.deleteAppointments.input.parse(req.body);
       const deleted = await storage.deleteAppointmentsByIds(ids);
       res.json({ ok: true, deleted });
-    } catch {
-      res.status(400).json({ message: "Bad Request" });
+    } catch (error: any) {
+      console.error("[admin.deleteAppointments] failed", error);
+      res.status(400).json({ message: error?.message || "Bad Request" });
     }
   });
 
   app.post(api.admin.settings.path, async (req, res) => {
     try {
-      const adminId = req.session.userId;
-      if (!adminId) return res.status(401).json({ message: "Not logged in" });
-      const admin = await storage.getUser(adminId);
-      if (!admin || admin.role !== "admin") return res.status(403).json({ message: "Admin only" });
+      const admin = await requireAdminPermission(req, res, "wallDisplay");
+      if (!admin) return;
       const input = api.admin.settings.input.parse(req.body);
       if (input.wallDisplayBackground) await storage.setAppSetting("wall_display_background", input.wallDisplayBackground);
       if (input.notificationSound) await storage.setAppSetting("notification_sound", input.notificationSound);
@@ -1226,7 +1520,7 @@ export async function registerRoutes(
 
   app.get(api.admin.usersList.path, async (req, res) => {
     try {
-      const admin = await requireAdmin(req, res);
+      const admin = await requireAdminPermission(req, res, "users");
       if (!admin) return;
 
       const requestedType = String(req.query.type ?? "all").toLowerCase();
@@ -1267,6 +1561,7 @@ export async function registerRoutes(
         photoUrl: u.photoUrl,
         isAvailable: u.isAvailable,
         unavailableHours: u.unavailableHours,
+        adminPermissions: u.adminPermissions,
         reservationCount: appointmentCountByClientId.get(u.id) ?? 0,
       }));
 
@@ -1281,9 +1576,277 @@ export async function registerRoutes(
     }
   });
 
+  app.post(api.admin.createAdmin.path, async (req, res) => {
+    const admin = await requireAdminPermission(req, res, "manage_admins");
+    if (!admin) return;
+    try {
+      const input = api.admin.createAdmin.input.parse(req.body);
+      const existing = await storage.getUserByUsername(input.username);
+      if (existing) return res.status(400).json({ message: "Username already exists." });
+      const hashedPassword = await hash(input.password.trim(), 10);
+      const allowed = new Set<string>(ADMIN_PERMISSIONS);
+      const permissions = (input.permissions ?? []).filter((p) => allowed.has(String(p)));
+      const created = await storage.createUser({
+        username: input.username.trim(),
+        googleId: null,
+        password: hashedPassword,
+        authProvider: "local",
+        role: "admin",
+        firstName: input.firstName.trim(),
+        lastName: input.lastName.trim(),
+        phone: input.phone?.trim() || null,
+        email: input.email?.trim() || null,
+        emailVerified: true,
+        loyaltyPoints: 0,
+        branchId: null,
+        yearsOfExperience: null,
+        bio: "Sub-admin account",
+        photoUrl: null,
+        isAvailable: true,
+        unavailableHours: "[]",
+        adminPermissions: JSON.stringify(permissions),
+      });
+      await persistAudit(admin.id, "admin_created", { targetAdminId: created.id, permissionsCount: permissions.length });
+      return res.status(201).json({ ok: true, user: created });
+    } catch (error: any) {
+      return res.status(400).json({ message: error?.message || "Bad Request" });
+    }
+  });
+
+  app.get(api.admin.adminsList.path, async (req, res) => {
+    const admin = await requireAdminPermission(req, res, "developer");
+    if (!admin) return;
+    try {
+      const users = await storage.getUsers();
+      const admins = users
+        .filter((u) => u.role === "admin")
+        .map((u) => ({
+          id: u.id,
+          username: u.username,
+          firstName: u.firstName,
+          lastName: u.lastName,
+          email: u.email,
+          adminPermissions: u.adminPermissions,
+          isMainAdmin: (u.username ?? "").toLowerCase() === "admin",
+        }));
+      return res.json({ ok: true, admins });
+    } catch (error: any) {
+      return res.status(400).json({ message: error?.message || "Bad Request" });
+    }
+  });
+
+  app.patch(api.admin.updateAdminPermissions.path, async (req, res) => {
+    const admin = await requireAdminPermission(req, res, "manage_admins");
+    if (!admin) return;
+    try {
+      const id = Number.parseInt(req.params.id, 10);
+      const target = await storage.getUser(id);
+      if (!target || target.role !== "admin") return res.status(404).json({ message: "Admin not found." });
+      if (id === admin.id) return res.status(400).json({ message: "Use another admin to edit your own permissions." });
+      const { permissions } = api.admin.updateAdminPermissions.input.parse(req.body);
+      const allowed = new Set<string>(ADMIN_PERMISSIONS);
+      const nextPerms = permissions.filter((p) => allowed.has(String(p)));
+      await storage.updateUser(id, { adminPermissions: JSON.stringify(nextPerms) });
+      await persistAudit(admin.id, "admin_permissions_updated", { targetAdminId: id, permissionsCount: nextPerms.length });
+      return res.json({ ok: true });
+    } catch (error: any) {
+      return res.status(400).json({ message: error?.message || "Bad Request" });
+    }
+  });
+
+  app.patch(api.admin.changeAdminPassword.path, async (req, res) => {
+    const admin = await requireAdminPermission(req, res, "developer");
+    if (!admin) return;
+    try {
+      const id = Number.parseInt(req.params.id, 10);
+      const target = await storage.getUser(id);
+      if (!target || target.role !== "admin") return res.status(404).json({ message: "Admin not found." });
+      const { password, username } = api.admin.changeAdminPassword.input.parse(req.body);
+      if (!password && !username) return res.status(400).json({ message: "Provide username or password." });
+      const nextData: Record<string, any> = {};
+      if (password) nextData.password = await hash(password.trim(), 10);
+      if (username) {
+        const normalizedUsername = username.trim();
+        const existing = await storage.getUserByUsername(normalizedUsername);
+        if (existing && existing.id !== id) return res.status(400).json({ message: "Username already exists." });
+        nextData.username = normalizedUsername;
+      }
+      await storage.updateUser(id, nextData);
+      await persistAudit(admin.id, "admin_credentials_changed", { targetAdminId: id, updatedUsername: Boolean(username), updatedPassword: Boolean(password) });
+      return res.json({ ok: true });
+    } catch (error: any) {
+      return res.status(400).json({ message: error?.message || "Bad Request" });
+    }
+  });
+
+  async function buildSchemaSnapshot() {
+    const tablesRes = await pool.query(`
+      select table_name
+      from information_schema.tables
+      where table_schema = 'public'
+      order by table_name asc
+    `);
+    const columnsRes = await pool.query(`
+      select table_name, column_name, data_type, is_nullable
+      from information_schema.columns
+      where table_schema = 'public'
+      order by table_name asc, ordinal_position asc
+    `);
+    const constraintsRes = await pool.query(`
+      select tc.table_name, tc.constraint_name, tc.constraint_type
+      from information_schema.table_constraints tc
+      where tc.table_schema = 'public'
+      order by tc.table_name asc, tc.constraint_type asc
+    `);
+    const rowEstimatesRes = await pool.query(`
+      select relname as table_name, n_live_tup::bigint as estimated_rows
+      from pg_stat_user_tables
+      order by relname asc
+    `);
+
+    const columnMap = new Map<string, any[]>();
+    for (const c of columnsRes.rows) {
+      const list = columnMap.get(c.table_name) ?? [];
+      list.push({
+        name: c.column_name,
+        type: c.data_type,
+        nullable: c.is_nullable === "YES",
+      });
+      columnMap.set(c.table_name, list);
+    }
+
+    const constraintMap = new Map<string, any[]>();
+    for (const c of constraintsRes.rows) {
+      const list = constraintMap.get(c.table_name) ?? [];
+      list.push({
+        name: c.constraint_name,
+        type: c.constraint_type,
+      });
+      constraintMap.set(c.table_name, list);
+    }
+
+    const rowMap = new Map<string, number>();
+    for (const r of rowEstimatesRes.rows) {
+      rowMap.set(r.table_name, Number(r.estimated_rows ?? 0));
+    }
+
+    const tables = tablesRes.rows.map((t) => ({
+      table: t.table_name,
+      estimatedRows: rowMap.get(t.table_name) ?? 0,
+      columns: columnMap.get(t.table_name) ?? [],
+      constraints: constraintMap.get(t.table_name) ?? [],
+    }));
+
+    return {
+      tablesCount: tables.length,
+      tables,
+    };
+  }
+
+  async function buildSqlMonitoringReport() {
+    const pathCounts = new Map<string, number>();
+    const statusCounts = new Map<number, number>();
+    const durationBuckets = {
+      fastLt100: 0,
+      normal100To500: 0,
+      slow500To1000: 0,
+      criticalGt1000: 0,
+    };
+    const slowApiCalls = auditLogs
+      .filter((a) => a.event === "api_call")
+      .sort((a, b) => b.durationMs - a.durationMs)
+      .slice(0, 200);
+
+    for (const log of auditLogs) {
+      if (log.event !== "api_call") continue;
+      const key = `${log.method} ${log.path}`;
+      pathCounts.set(key, (pathCounts.get(key) ?? 0) + 1);
+      statusCounts.set(log.statusCode, (statusCounts.get(log.statusCode) ?? 0) + 1);
+      if (log.durationMs < 100) durationBuckets.fastLt100 += 1;
+      else if (log.durationMs < 500) durationBuckets.normal100To500 += 1;
+      else if (log.durationMs < 1000) durationBuckets.slow500To1000 += 1;
+      else durationBuckets.criticalGt1000 += 1;
+    }
+
+    const topPaths = Array.from(pathCounts.entries())
+      .map(([path, count]) => ({ path, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 25);
+
+    const topStatuses = Array.from(statusCounts.entries())
+      .map(([statusCode, count]) => ({ statusCode, count }))
+      .sort((a, b) => b.count - a.count);
+
+    const dbWaitRes = await pool.query(`
+      select state, count(*)::int as count
+      from pg_stat_activity
+      group by state
+      order by count desc
+    `);
+
+    return {
+      generatedAt: new Date().toISOString(),
+      totals: {
+        apiCallLogs: auditLogs.filter((a) => a.event === "api_call").length,
+      },
+      durationBuckets,
+      topPaths,
+      topStatuses,
+      slowestApiCalls: slowApiCalls.slice(0, 50).map((a) => ({
+        timestamp: a.timestamp,
+        method: a.method,
+        path: a.path,
+        statusCode: a.statusCode,
+        durationMs: a.durationMs,
+        ip: a.ip,
+      })),
+      dbActivityStates: dbWaitRes.rows,
+    };
+  }
+
+  function buildRuntimeNetworkConfig() {
+    const appUrl = process.env.APP_BASE_URL ?? null;
+    let domain: string | null = null;
+    let protocol: string | null = null;
+    let sslEnabled = false;
+    try {
+      if (appUrl) {
+        const parsed = new URL(appUrl);
+        domain = parsed.hostname;
+        protocol = parsed.protocol.replace(":", "");
+        sslEnabled = parsed.protocol === "https:";
+      }
+    } catch {
+      domain = null;
+      protocol = null;
+      sslEnabled = false;
+    }
+
+    const interfaces = os.networkInterfaces();
+    const ips: string[] = [];
+    for (const list of Object.values(interfaces)) {
+      for (const i of list ?? []) {
+        if (i.family === "IPv4" && !i.internal) ips.push(i.address);
+      }
+    }
+
+    return {
+      host: process.env.HOST ?? "0.0.0.0",
+      port: Number(process.env.PORT ?? 5000),
+      appBaseUrl: appUrl,
+      domain,
+      protocol,
+      sslEnabled,
+      trustProxy: true,
+      bindIps: ips,
+      sslCertConfigured: Boolean(process.env.SSL_CERT_PATH || process.env.TLS_CERT_PATH),
+      sslKeyConfigured: Boolean(process.env.SSL_KEY_PATH || process.env.TLS_KEY_PATH),
+    };
+  }
+
   app.get(api.admin.developerSnapshot.path, async (req, res) => {
     try {
-      const admin = await requireAdmin(req, res);
+      const admin = await requireAdminPermission(req, res, "developer");
       if (!admin) return;
 
       let dbStatus: "up" | "down" = "up";
@@ -1365,27 +1928,38 @@ export async function registerRoutes(
       ];
       const securityScore = Math.round((securityChecks.filter(Boolean).length / securityChecks.length) * 100);
 
+      const runtimeNetwork = buildRuntimeNetworkConfig();
+      const schemaSnapshot = await buildSchemaSnapshot();
+      const sqlReport = await buildSqlMonitoringReport();
+
       const snapshot = {
         generatedAt: new Date().toISOString(),
         generatedBy: { id: admin.id, username: admin.username, role: admin.role },
         app: {
           environment: process.env.NODE_ENV ?? "development",
           uptimeSeconds: Math.floor(process.uptime()),
-          host: process.env.HOST ?? "0.0.0.0",
-          port: Number(process.env.PORT ?? 5000),
-          appBaseUrl: process.env.APP_BASE_URL ?? null,
+          host: runtimeNetwork.host,
+          port: runtimeNetwork.port,
+          appBaseUrl: runtimeNetwork.appBaseUrl,
           trustProxy: true,
+          nodeVersion: process.version,
+          platform: process.platform,
+          arch: process.arch,
+          memoryUsageMb: {
+            rss: Math.round(process.memoryUsage().rss / 1024 / 1024),
+            heapUsed: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+            heapTotal: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
+          },
+          cpuLoadAvg: os.loadavg(),
         },
         network: {
           status: dbStatus === "up" ? "online" : "degraded",
-          domain: (() => {
-            try {
-              if (!process.env.APP_BASE_URL) return null;
-              return new URL(process.env.APP_BASE_URL).hostname;
-            } catch {
-              return null;
-            }
-          })(),
+          domain: runtimeNetwork.domain,
+          protocol: runtimeNetwork.protocol,
+          sslEnabled: runtimeNetwork.sslEnabled,
+          bindIps: runtimeNetwork.bindIps,
+          sslCertConfigured: runtimeNetwork.sslCertConfigured,
+          sslKeyConfigured: runtimeNetwork.sslKeyConfigured,
           dbStatus,
           dbLatencyMs,
         },
@@ -1411,6 +1985,8 @@ export async function registerRoutes(
         recentApiCalls,
         loginHistory,
         recentReservations,
+        dbSchema: schemaSnapshot,
+        sqlMonitoring: sqlReport,
       };
 
       return res.json({ ok: true, snapshot });
@@ -1422,7 +1998,7 @@ export async function registerRoutes(
 
   app.get(api.admin.developerExport.path, async (req, res) => {
     try {
-      const admin = await requireAdmin(req, res);
+      const admin = await requireAdminPermission(req, res, "developer");
       if (!admin) return;
       let dbStatus: "up" | "down" = "up";
       let dbLatencyMs = 0;
@@ -1449,17 +2025,32 @@ export async function registerRoutes(
       ];
       const securityScore = Math.round((securityChecks.filter(Boolean).length / securityChecks.length) * 100);
 
+      const runtimeNetwork = buildRuntimeNetworkConfig();
+      const schemaSnapshot = await buildSchemaSnapshot();
+      const sqlReport = await buildSqlMonitoringReport();
       const payload = {
         ok: true,
         snapshot: {
           generatedAt: new Date().toISOString(),
           generatedBy: { id: admin.id, username: admin.username, role: admin.role },
-          network: { dbStatus, dbLatencyMs, host: process.env.HOST ?? "0.0.0.0", appBaseUrl: process.env.APP_BASE_URL ?? null },
+          network: {
+            dbStatus,
+            dbLatencyMs,
+            host: runtimeNetwork.host,
+            port: runtimeNetwork.port,
+            appBaseUrl: runtimeNetwork.appBaseUrl,
+            domain: runtimeNetwork.domain,
+            protocol: runtimeNetwork.protocol,
+            sslEnabled: runtimeNetwork.sslEnabled,
+            bindIps: runtimeNetwork.bindIps,
+          },
           authAndSecurity: { mode: "session_cookie", jwtEnabled: false, securityScore, vulnerabilities },
           counts: { users: users.length, appointments: appointmentItems.length, routes: uniqueRoutes.length },
           routes: uniqueRoutes,
           recentApiCalls: auditLogs.slice(-1000),
           recentReservations: appointmentItems.slice(-1000),
+          dbSchema: schemaSnapshot,
+          sqlMonitoring: sqlReport,
         },
       };
 
@@ -1469,6 +2060,68 @@ export async function registerRoutes(
       return res.status(200).send(JSON.stringify(payload, null, 2));
     } catch (error: any) {
       console.error("[admin.developerExport] failed", error);
+      return res.status(400).json({ message: "Bad Request" });
+    }
+  });
+
+  app.get(api.admin.developerSchema.path, async (req, res) => {
+    try {
+      const admin = await requireAdminPermission(req, res, "developer");
+      if (!admin) return;
+      const schema = await buildSchemaSnapshot();
+      return res.json({ ok: true, schema });
+    } catch (error: any) {
+      console.error("[admin.developerSchema] failed", error);
+      return res.status(400).json({ message: "Bad Request" });
+    }
+  });
+
+  app.get(api.admin.developerSqlReport.path, async (req, res) => {
+    try {
+      const admin = await requireAdminPermission(req, res, "developer");
+      if (!admin) return;
+      const report = await buildSqlMonitoringReport();
+      return res.json({ ok: true, report });
+    } catch (error: any) {
+      console.error("[admin.developerSqlReport] failed", error);
+      return res.status(400).json({ message: "Bad Request" });
+    }
+  });
+
+  app.get(api.admin.developerSqlExport.path, async (req, res) => {
+    try {
+      const admin = await requireAdminPermission(req, res, "developer");
+      if (!admin) return;
+      const sqlTemplate = [
+        "-- Developer SQL Monitoring Template",
+        "-- Generated at: " + new Date().toISOString(),
+        "",
+        "-- 1) Active sessions by state",
+        "select state, count(*)::int as count from pg_stat_activity group by state order by count desc;",
+        "",
+        "-- 2) Table row estimates",
+        "select relname as table_name, n_live_tup::bigint as estimated_rows from pg_stat_user_tables order by relname asc;",
+        "",
+        "-- 3) Recently created appointments",
+        "select id, appointment_date, status, payment_status, created_at from appointments order by created_at desc limit 200;",
+        "",
+        "-- 4) Reviews pending moderation",
+        "select id, barber_id, client_id, rating, comment, created_at from reviews where is_approved = false order by created_at desc;",
+        "",
+        "-- 5) Inventory low stock (< 5)",
+        "select id, product_name, stock_quantity, price from inventory where stock_quantity < 5 order by stock_quantity asc;",
+        "",
+        "-- 6) Flagged no-show clients",
+        "select id, first_name, last_name, no_show_count, is_flagged_no_show from users where role='client' and is_flagged_no_show = true order by no_show_count desc;",
+        "",
+      ].join("\n");
+
+      const fileName = `developer-sql-report-${new Date().toISOString().replace(/[:.]/g, "-")}.sql`;
+      res.setHeader("Content-Type", "application/sql; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+      return res.status(200).send(sqlTemplate);
+    } catch (error: any) {
+      console.error("[admin.developerSqlExport] failed", error);
       return res.status(400).json({ message: "Bad Request" });
     }
   });
@@ -1754,6 +2407,558 @@ export async function registerRoutes(
     res.json({ groupTotal, byUser });
   });
 
+  app.get(api.calendar.events.path, async (req, res) => {
+    const barberIdRaw = String(req.query.barberId ?? "").trim();
+    const appointments = barberIdRaw
+      ? await storage.getAppointmentsByBarber(Number.parseInt(barberIdRaw, 10))
+      : await storage.getAppointments();
+    const events = appointments.map((a) => ({
+      id: a.id,
+      title: `Appointment #${a.id}`,
+      start: a.appointmentDate,
+      status: a.status,
+      barberId: a.barberId,
+      serviceId: a.serviceId,
+      color:
+        a.status === "accepted"
+          ? "#15803d"
+          : a.status === "rejected"
+            ? "#b91c1c"
+            : a.status === "completed"
+              ? "#1d4ed8"
+              : "#d97706",
+    }));
+    res.json(events);
+  });
+
+  app.patch(api.calendar.moveAppointment.path, async (req, res) => {
+    try {
+      const id = Number.parseInt(req.params.id, 10);
+      const { appointmentDate } = api.calendar.moveAppointment.input.parse(req.body);
+      const updated = await storage.updateAppointment(id, { appointmentDate: new Date(appointmentDate) });
+      await persistAudit(getSessionUserId(req.session.userId), "calendar_drag_drop_move", { appointmentId: id, appointmentDate });
+      return res.json(updated);
+    } catch {
+      return res.status(400).json({ message: "Bad Request" });
+    }
+  });
+
+  app.get(api.clientHistory.profile.path, async (req, res) => {
+    const userId = Number.parseInt(req.params.id, 10);
+    const client = await storage.getUser(userId);
+    if (!client || client.role !== "client") return res.status(404).json({ message: "Client not found" });
+    const allAppointments = await storage.getAppointments();
+    const services = await storage.getServices();
+    const barbers = await storage.getBarbers();
+    const serviceById = new Map(services.map((s) => [s.id, s]));
+    const barberById = new Map(barbers.map((b) => [b.id, `${b.firstName} ${b.lastName}`.trim()]));
+    const visits = allAppointments.filter((a) => a.clientId === userId && a.status === "completed");
+    const serviceCount = new Map<number, number>();
+    const barberCount = new Map<number, number>();
+    for (const v of visits) {
+      serviceCount.set(v.serviceId, (serviceCount.get(v.serviceId) ?? 0) + 1);
+      barberCount.set(v.barberId, (barberCount.get(v.barberId) ?? 0) + 1);
+    }
+    const mostFrequentServiceId = Array.from(serviceCount.entries()).sort((a, b) => b[1] - a[1])[0]?.[0];
+    const favoriteBarberId = Array.from(barberCount.entries()).sort((a, b) => b[1] - a[1])[0]?.[0];
+    return res.json({
+      client: { id: client.id, firstName: client.firstName, lastName: client.lastName },
+      visits: visits
+        .sort((a, b) => new Date(b.appointmentDate).getTime() - new Date(a.appointmentDate).getTime())
+        .map((v) => ({
+          id: v.id,
+          date: v.appointmentDate,
+          service: serviceById.get(v.serviceId)?.name ?? "Service",
+          barber: barberById.get(v.barberId) ?? "Barber",
+        })),
+      favoriteBarber: favoriteBarberId ? barberById.get(favoriteBarberId) : null,
+      mostFrequentService: mostFrequentServiceId ? serviceById.get(mostFrequentServiceId)?.name ?? null : null,
+    });
+  });
+
+  app.get(api.reviews.list.path, async (_req, res) => {
+    const rows = await pool.query("select * from reviews order by created_at desc");
+    res.json(rows.rows);
+  });
+
+  app.post(api.reviews.create.path, async (req, res) => {
+    try {
+      const userId = getSessionUserId(req.session.userId);
+      if (!userId) return res.status(401).json({ message: "Not logged in" });
+      const { appointmentId, rating, comment } = api.reviews.create.input.parse(req.body);
+      const appointment = await storage.getAppointment(appointmentId);
+      if (!appointment || appointment.clientId !== userId || appointment.status !== "completed") {
+        return res.status(400).json({ message: "Review is allowed only for your completed appointments." });
+      }
+      const row = await pool.query(
+        "insert into reviews (barber_id, client_id, appointment_id, rating, comment, is_approved) values ($1, $2, $3, $4, $5, false) returning *",
+        [appointment.barberId, userId, appointment.id, rating, comment ?? null],
+      );
+      await persistAudit(userId, "review_created", { appointmentId, rating });
+      return res.status(201).json(row.rows[0]);
+    } catch {
+      return res.status(400).json({ message: "Bad Request" });
+    }
+  });
+
+  app.patch(api.reviews.moderate.path, async (req, res) => {
+    const admin = await requireAdminPermission(req, res, "reports");
+    if (!admin) return;
+    try {
+      const id = Number.parseInt(req.params.id, 10);
+      const { isApproved } = api.reviews.moderate.input.parse(req.body);
+      const row = await pool.query("update reviews set is_approved = $1 where id = $2 returning *", [isApproved, id]);
+      if (!row.rows[0]) return res.status(404).json({ message: "Review not found" });
+      await persistAudit(admin.id, "review_moderated", { reviewId: id, isApproved });
+      return res.json(row.rows[0]);
+    } catch {
+      return res.status(400).json({ message: "Bad Request" });
+    }
+  });
+
+  app.get(api.reviews.average.path, async (req, res) => {
+    const barberId = Number.parseInt(req.params.barberId, 10);
+    const row = await pool.query(
+      "select coalesce(avg(rating), 0) as avg, count(*)::int as count from reviews where barber_id = $1 and is_approved = true",
+      [barberId],
+    );
+    res.json({ barberId, averageRating: Number(row.rows[0]?.avg ?? 0), count: Number(row.rows[0]?.count ?? 0) });
+  });
+
+  app.get(api.waitlist.list.path, async (_req, res) => {
+    const rows = await pool.query("select * from waitlist order by created_at desc");
+    res.json(rows.rows);
+  });
+
+  app.post(api.waitlist.join.path, async (req, res) => {
+    try {
+      const userId = getSessionUserId(req.session.userId);
+      if (!userId) return res.status(401).json({ message: "Not logged in" });
+      const { serviceId, date } = api.waitlist.join.input.parse(req.body);
+      const row = await pool.query(
+        "insert into waitlist (service_id, date, client_id, status) values ($1, $2, $3, 'waiting') returning *",
+        [serviceId, new Date(date), userId],
+      );
+      return res.status(201).json(row.rows[0]);
+    } catch {
+      return res.status(400).json({ message: "Bad Request" });
+    }
+  });
+
+  app.patch(api.waitlist.claim.path, async (req, res) => {
+    const userId = getSessionUserId(req.session.userId);
+    if (!userId) return res.status(401).json({ message: "Not logged in" });
+    const id = Number.parseInt(req.params.id, 10);
+    const row = await pool.query("update waitlist set status = 'claimed' where id = $1 and client_id = $2 returning *", [id, userId]);
+    if (!row.rows[0]) return res.status(404).json({ message: "Waitlist request not found" });
+    res.json(row.rows[0]);
+  });
+
+  app.get(api.inventory.list.path, async (_req, res) => {
+    const rows = await pool.query("select * from inventory order by id desc");
+    res.json(rows.rows);
+  });
+
+  app.post(api.inventory.create.path, async (req, res) => {
+    const admin = await requireAdminPermission(req, res, "growth");
+    if (!admin) return;
+    try {
+      const { productName, stockQuantity, price } = api.inventory.create.input.parse(req.body);
+      const row = await pool.query(
+        "insert into inventory (product_name, stock_quantity, price) values ($1, $2, $3) returning *",
+        [productName, stockQuantity, price],
+      );
+      await persistAudit(admin.id, "inventory_create", { productName, stockQuantity, price });
+      return res.status(201).json(row.rows[0]);
+    } catch {
+      return res.status(400).json({ message: "Bad Request" });
+    }
+  });
+
+  app.patch(api.inventory.update.path, async (req, res) => {
+    const admin = await requireAdminPermission(req, res, "growth");
+    if (!admin) return;
+    try {
+      const id = Number.parseInt(req.params.id, 10);
+      const input = api.inventory.update.input.parse(req.body);
+      const existing = await pool.query("select * from inventory where id = $1", [id]);
+      if (!existing.rows[0]) return res.status(404).json({ message: "Not found" });
+      const next = {
+        productName: input.productName ?? existing.rows[0].product_name,
+        stockQuantity: input.stockQuantity ?? existing.rows[0].stock_quantity,
+        price: input.price ?? existing.rows[0].price,
+      };
+      const row = await pool.query(
+        "update inventory set product_name = $1, stock_quantity = $2, price = $3, last_updated = now() where id = $4 returning *",
+        [next.productName, next.stockQuantity, next.price, id],
+      );
+      await persistAudit(admin.id, "inventory_update", { inventoryId: id, ...next });
+      return res.json(row.rows[0]);
+    } catch {
+      return res.status(400).json({ message: "Bad Request" });
+    }
+  });
+
+  app.delete(api.inventory.remove.path, async (req, res) => {
+    const admin = await requireAdminPermission(req, res, "growth");
+    if (!admin) return;
+    const id = Number.parseInt(req.params.id, 10);
+    const deleted = await pool.query("delete from inventory where id = $1 returning id", [id]);
+    await persistAudit(admin.id, "inventory_delete", { inventoryId: id });
+    res.json({ ok: (deleted.rowCount ?? 0) > 0 });
+  });
+
+  app.post(api.inventory.sale.path, async (req, res) => {
+    const userId = getSessionUserId(req.session.userId);
+    if (!userId) return res.status(401).json({ message: "Not logged in" });
+    try {
+      const id = Number.parseInt(req.params.id, 10);
+      const { quantity } = api.inventory.sale.input.parse(req.body);
+      const row = await pool.query("select * from inventory where id = $1", [id]);
+      if (!row.rows[0]) return res.status(404).json({ message: "Item not found" });
+      if (row.rows[0].stock_quantity < quantity) return res.status(400).json({ message: "Insufficient stock" });
+      const newStock = row.rows[0].stock_quantity - quantity;
+      const totalAmount = row.rows[0].price * quantity;
+      await pool.query("update inventory set stock_quantity = $1, last_updated = now() where id = $2", [newStock, id]);
+      await pool.query(
+        "insert into inventory_sales (inventory_id, quantity, total_amount, sold_by_user_id) values ($1, $2, $3, $4)",
+        [id, quantity, totalAmount, userId],
+      );
+      res.json({ ok: true, newStock, totalAmount });
+    } catch {
+      res.status(400).json({ message: "Bad Request" });
+    }
+  });
+
+  app.get(api.analytics.dashboard.path, async (_req, res) => {
+    const appointments = await storage.getAppointments();
+    const services = await storage.getServices();
+    const barbers = await storage.getBarbers();
+    const earnings = await pool.query("select * from appointment_earnings");
+    const bookingsPerDayMap = new Map<string, number>();
+    const peakHoursMap = new Map<number, number>();
+    const serviceCount = new Map<number, number>();
+    const barberCount = new Map<number, number>();
+    for (const a of appointments) {
+      const d = new Date(a.appointmentDate);
+      const key = d.toISOString().slice(0, 10);
+      bookingsPerDayMap.set(key, (bookingsPerDayMap.get(key) ?? 0) + 1);
+      peakHoursMap.set(d.getHours(), (peakHoursMap.get(d.getHours()) ?? 0) + 1);
+      serviceCount.set(a.serviceId, (serviceCount.get(a.serviceId) ?? 0) + 1);
+      barberCount.set(a.barberId, (barberCount.get(a.barberId) ?? 0) + 1);
+    }
+    const monthKey = new Date().toISOString().slice(0, 7);
+    const monthlyRevenue = earnings.rows
+      .filter((r) => String(r.earned_at ?? "").startsWith(monthKey))
+      .reduce((sum, r) => sum + Number(r.total_amount ?? 0), 0);
+    const mostPopularServiceId = Array.from(serviceCount.entries()).sort((a, b) => b[1] - a[1])[0]?.[0];
+    const busiestBarberId = Array.from(barberCount.entries()).sort((a, b) => b[1] - a[1])[0]?.[0];
+    const busiestHour = Array.from(peakHoursMap.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+    res.json({
+      bookingsPerDay: Array.from(bookingsPerDayMap.entries()).map(([date, count]) => ({ date, count })),
+      mostPopularService: services.find((s) => s.id === mostPopularServiceId)?.name ?? null,
+      busiestBarber:
+        barbers.find((b) => b.id === busiestBarberId)
+          ? `${barbers.find((b) => b.id === busiestBarberId)?.firstName} ${barbers.find((b) => b.id === busiestBarberId)?.lastName}`
+          : null,
+      peakHour: busiestHour,
+      monthlyRevenue,
+    });
+  });
+
+  app.post(api.aiAssistant.suggest.path, async (req, res) => {
+    try {
+      const { prompt } = api.aiAssistant.suggest.input.parse(req.body);
+      const appointments = await storage.getAppointments();
+      const hourCount = new Map<number, number>();
+      for (const a of appointments) {
+        const h = new Date(a.appointmentDate).getHours();
+        hourCount.set(h, (hourCount.get(h) ?? 0) + 1);
+      }
+      const leastBusyHours = Array.from(hourCount.entries()).sort((a, b) => a[1] - b[1]).slice(0, 3).map(([h]) => h);
+      const mostBusyHours = Array.from(hourCount.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([h]) => h);
+      const lower = prompt.toLowerCase();
+      if (lower.includes("best") || lower.includes("slot")) {
+        return res.json({ answer: `Best times based on history: ${leastBusyHours.map((h) => `${h}:00`).join(", ")}.` });
+      }
+      if (lower.includes("busy")) {
+        return res.json({ answer: `Predicted busy hours: ${mostBusyHours.map((h) => `${h}:00`).join(", ")}.` });
+      }
+      return res.json({ answer: "Try: 'Suggest best appointment slots today' or 'Predict busiest hours this weekend'." });
+    } catch {
+      return res.status(400).json({ message: "Bad Request" });
+    }
+  });
+
+  app.get(api.referrals.myCode.path, async (req, res) => {
+    const userId = getSessionUserId(req.session.userId);
+    if (!userId) return res.status(401).json({ message: "Not logged in" });
+    const existing = await pool.query("select * from referral_codes where user_id = $1 limit 1", [userId]);
+    if (existing.rows[0]) return res.json(existing.rows[0]);
+    const code = `REF-${userId}-${crypto.randomBytes(2).toString("hex").toUpperCase()}`;
+    const row = await pool.query("insert into referral_codes (user_id, code) values ($1, $2) returning *", [userId, code]);
+    res.json(row.rows[0]);
+  });
+
+  app.post(api.referrals.apply.path, async (req, res) => {
+    const userId = getSessionUserId(req.session.userId);
+    if (!userId) return res.status(401).json({ message: "Not logged in" });
+    try {
+      const { code } = api.referrals.apply.input.parse(req.body);
+      const ref = await pool.query("select * from referral_codes where code = $1 limit 1", [code]);
+      if (!ref.rows[0]) return res.status(404).json({ message: "Invalid code" });
+      if (Number(ref.rows[0].user_id) === userId) return res.status(400).json({ message: "You cannot use your own code" });
+      const row = await pool.query(
+        "insert into referrals (referrer_id, referred_user_id, reward_given) values ($1, $2, true) returning *",
+        [ref.rows[0].user_id, userId],
+      );
+      await storage.updateUser(ref.rows[0].user_id, { bookingCreditCents: ((await storage.getUser(ref.rows[0].user_id))?.bookingCreditCents ?? 0) + 500 });
+      await storage.updateUser(userId, { bookingCreditCents: ((await storage.getUser(userId))?.bookingCreditCents ?? 0) + 500 });
+      res.json(row.rows[0]);
+    } catch {
+      res.status(400).json({ message: "Bad Request" });
+    }
+  });
+
+  app.get(api.gallery.list.path, async (req, res) => {
+    const barberId = Number.parseInt(req.params.barberId, 10);
+    res.setHeader("Cache-Control", "no-store");
+    const rows = await pool.query("select * from barber_gallery where barber_id = $1 order by created_at desc", [barberId]);
+    res.json(rows.rows);
+  });
+
+  app.post(api.gallery.add.path, async (req, res) => {
+    const userId = getSessionUserId(req.session.userId);
+    if (!userId) return res.status(401).json({ message: "Not logged in" });
+    try {
+      const parsed = api.gallery.add.input.safeParse(req.body);
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0];
+        return res.status(400).json({
+          message: issue?.message ?? "Invalid gallery payload",
+          field: issue?.path?.join(".") ?? "unknown",
+        });
+      }
+      const { barberId, imageUrl, caption } = parsed.data;
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(401).json({ message: "Not logged in" });
+      if (!["admin", "barber"].includes(user.role)) return res.status(403).json({ message: "Forbidden" });
+      if (user.role === "admin" && !hasAdminPermission(user, "gallery")) {
+        return res.status(403).json({ message: "No access to this section." });
+      }
+
+      // Barbers can upload only to their own gallery; admins can upload for any barber.
+      const targetBarberId = user.role === "admin" ? barberId : user.id;
+      const targetBarberIdNum = Number(targetBarberId);
+      if (user.role === "admin" && !Number.isFinite(targetBarberIdNum)) {
+        return res.status(400).json({ message: "barberId is required for admin uploads." });
+      }
+      const targetBarber = await storage.getUser(targetBarberIdNum);
+      if (!targetBarber || targetBarber.role !== "barber") {
+        return res.status(400).json({ message: "Target barber not found." });
+      }
+
+      const row = await pool.query(
+        "insert into barber_gallery (barber_id, image_url, caption) values ($1, $2, $3) returning *",
+        [targetBarberIdNum, imageUrl, caption ?? null],
+      );
+      res.status(201).json(row.rows[0]);
+    } catch (error: any) {
+      console.error("[gallery.add] failed", error);
+      const message =
+        process.env.NODE_ENV === "development"
+          ? error?.message || "Bad Request"
+          : "Bad Request";
+      res.status(400).json({ message });
+    }
+  });
+
+  app.patch(api.gallery.update.path, async (req, res) => {
+    const userId = getSessionUserId(req.session.userId);
+    if (!userId) return res.status(401).json({ message: "Not logged in" });
+    try {
+      const id = Number.parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) return res.status(400).json({ message: "Invalid gallery id" });
+      const parsed = api.gallery.update.input.safeParse(req.body);
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0];
+        return res.status(400).json({
+          message: issue?.message ?? "Invalid gallery payload",
+          field: issue?.path?.join(".") ?? "unknown",
+        });
+      }
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(401).json({ message: "Not logged in" });
+      if (!["admin", "barber"].includes(user.role)) return res.status(403).json({ message: "Forbidden" });
+      if (user.role === "admin" && !hasAdminPermission(user, "gallery")) {
+        return res.status(403).json({ message: "No access to this section." });
+      }
+
+      const existing = await pool.query("select * from barber_gallery where id = $1 limit 1", [id]);
+      const row = existing.rows[0];
+      if (!row) return res.status(404).json({ message: "Gallery post not found" });
+      if (user.role === "barber" && Number(row.barber_id) !== Number(user.id)) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const { imageUrl, caption } = parsed.data;
+      const nextImageUrl = imageUrl ?? row.image_url;
+      const nextCaption = caption ?? row.caption;
+
+      const updated = await pool.query(
+        "update barber_gallery set image_url = $1, caption = $2 where id = $3 returning *",
+        [nextImageUrl, nextCaption, id],
+      );
+      res.json(updated.rows[0]);
+    } catch (error: any) {
+      console.error("[gallery.update] failed", error);
+      res.status(400).json({ message: process.env.NODE_ENV === "development" ? error?.message || "Bad Request" : "Bad Request" });
+    }
+  });
+
+  app.delete(api.gallery.remove.path, async (req, res) => {
+    const userId = getSessionUserId(req.session.userId);
+    if (!userId) return res.status(401).json({ message: "Not logged in" });
+    try {
+      const id = Number.parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) return res.status(400).json({ message: "Invalid gallery id" });
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(401).json({ message: "Not logged in" });
+      if (!["admin", "barber"].includes(user.role)) return res.status(403).json({ message: "Forbidden" });
+      if (user.role === "admin" && !hasAdminPermission(user, "gallery")) {
+        return res.status(403).json({ message: "No access to this section." });
+      }
+
+      const existing = await pool.query("select * from barber_gallery where id = $1 limit 1", [id]);
+      const row = existing.rows[0];
+      if (!row) return res.status(404).json({ message: "Gallery post not found" });
+      if (user.role === "barber" && Number(row.barber_id) !== Number(user.id)) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      await pool.query("delete from barber_gallery where id = $1", [id]);
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("[gallery.delete] failed", error);
+      res.status(400).json({ message: process.env.NODE_ENV === "development" ? error?.message || "Bad Request" : "Bad Request" });
+    }
+  });
+
+  app.get(api.customerTags.list.path, async (_req, res) => {
+    const rows = await pool.query("select * from customer_tags order by name asc");
+    res.json(rows.rows);
+  });
+
+  app.post(api.customerTags.create.path, async (req, res) => {
+    const admin = await requireAdminPermission(req, res, "growth");
+    if (!admin) return;
+    try {
+      const { name } = api.customerTags.create.input.parse(req.body);
+      const row = await pool.query("insert into customer_tags (name) values ($1) returning *", [name]);
+      res.status(201).json(row.rows[0]);
+    } catch {
+      res.status(400).json({ message: "Bad Request" });
+    }
+  });
+
+  app.post(api.customerTags.assign.path, async (req, res) => {
+    const admin = await requireAdminPermission(req, res, "growth");
+    if (!admin) return;
+    try {
+      const { userId, tagId } = api.customerTags.assign.input.parse(req.body);
+      await pool.query("insert into user_tags (user_id, tag_id) values ($1, $2)", [userId, tagId]);
+      res.json({ ok: true });
+    } catch {
+      res.status(400).json({ message: "Bad Request" });
+    }
+  });
+
+  app.get(api.customerTags.usersByTag.path, async (req, res) => {
+    const admin = await requireAdminPermission(req, res, "growth");
+    if (!admin) return;
+    const tagId = Number.parseInt(req.params.tagId, 10);
+    const rows = await pool.query(
+      "select u.* from users u join user_tags ut on ut.user_id = u.id where ut.tag_id = $1 order by u.id desc",
+      [tagId],
+    );
+    res.json(rows.rows);
+  });
+
+  app.get(api.campaigns.list.path, async (_req, res) => {
+    const rows = await pool.query("select * from marketing_campaigns order by sent_at desc");
+    res.json(rows.rows);
+  });
+
+  app.post(api.campaigns.send.path, async (req, res) => {
+    const admin = await requireAdminPermission(req, res, "growth");
+    if (!admin) return;
+    try {
+      const { title, message, channel, targetTagId } = api.campaigns.send.input.parse(req.body);
+      const campaign = await pool.query(
+        "insert into marketing_campaigns (title, message, sent_by_user_id, channel, target_tag_id) values ($1, $2, $3, $4, $5) returning *",
+        [title, message, admin.id, channel, targetTagId ?? null],
+      );
+      const recipients = targetTagId
+        ? await pool.query(
+            "select u.* from users u join user_tags ut on ut.user_id = u.id where ut.tag_id = $1 and u.role = 'client'",
+            [targetTagId],
+          )
+        : await pool.query("select * from users where role = 'client'");
+      for (const r of recipients.rows) {
+        if (channel === "email" && r.email) await sendEmail(r.email, title, message);
+        if (channel === "sms" && r.phone) await sendSms(r.phone, message);
+      }
+      await persistAudit(admin.id, "marketing_campaign_sent", { campaignId: campaign.rows[0]?.id, recipients: recipients.rowCount });
+      res.status(201).json(campaign.rows[0]);
+    } catch {
+      res.status(400).json({ message: "Bad Request" });
+    }
+  });
+
+  app.get(api.geo.nearest.path, async (req, res) => {
+    const lat = Number.parseFloat(String(req.query.lat ?? ""));
+    const lng = Number.parseFloat(String(req.query.lng ?? ""));
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ message: "lat and lng query params are required." });
+    }
+    const branches = await storage.getBranches();
+    const withDistance = branches
+      .filter((b) => Number.isFinite(Number(b.latitude)) && Number.isFinite(Number(b.longitude)))
+      .map((b) => ({
+        ...b,
+        distanceKm: haversineKm(lat, lng, Number(b.latitude), Number(b.longitude)),
+      }))
+      .sort((a, b) => a.distanceKm - b.distanceKm);
+    res.json(withDistance[0] ?? null);
+  });
+
+  app.get(api.cancellationPolicy.get.path, async (_req, res) => {
+    const freeCancelHours = Number.parseInt((await storage.getAppSetting("cancellation_free_hours")) ?? "3", 10);
+    const lateFee = Number.parseInt((await storage.getAppSetting("cancellation_late_fee")) ?? "10", 10);
+    res.json({ freeCancelHours, lateFee });
+  });
+
+  app.post(api.cancellationPolicy.set.path, async (req, res) => {
+    const admin = await requireAdminPermission(req, res, "finance");
+    if (!admin) return;
+    try {
+      const { freeCancelHours, lateFee } = api.cancellationPolicy.set.input.parse(req.body);
+      await storage.setAppSetting("cancellation_free_hours", String(freeCancelHours));
+      await storage.setAppSetting("cancellation_late_fee", String(lateFee));
+      await persistAudit(admin.id, "cancellation_policy_updated", { freeCancelHours, lateFee });
+      res.json({ ok: true });
+    } catch {
+      res.status(400).json({ message: "Bad Request" });
+    }
+  });
+
+  app.get(api.audit.list.path, async (req, res) => {
+    const admin = await requireAdminPermission(req, res, "developer");
+    if (!admin) return;
+    const rows = await pool.query("select * from audit_logs order by timestamp desc limit 1000");
+    res.json(rows.rows);
+  });
+
   app.get(api.settings.public.path, async (_req, res) => {
     const wallDisplayBackground =
       (await storage.getAppSetting("wall_display_background")) ||
@@ -1764,6 +2969,47 @@ export async function registerRoutes(
     const wallShowMusic = (await storage.getAppSetting("wall_show_music")) !== "0";
     const wallQueueLimit = Number.parseInt((await storage.getAppSetting("wall_queue_limit")) || "6", 10);
     res.json({ wallDisplayBackground, notificationSound, wallShowWeather, wallShowMusic, wallQueueLimit: Number.isFinite(wallQueueLimit) ? wallQueueLimit : 6 });
+  });
+
+  app.get(api.landingMedia.get.path, async (_req, res) => {
+    try {
+      res.setHeader("Cache-Control", "no-store");
+      const raw = await storage.getAppSetting("landing_media_boxes");
+      if (!raw) return res.json({ photos: [], videos: [] });
+      const parsed = JSON.parse(raw);
+      const photosRaw = Array.isArray((parsed as any)?.photos) ? (parsed as any).photos : [];
+      const videosRaw = Array.isArray((parsed as any)?.videos) ? (parsed as any).videos : [];
+      const photos = photosRaw
+        .map((p: any, idx: number) => ({
+          id: String(p?.id ?? `photo-${idx}`),
+          title: String(p?.title ?? ""),
+          imageUrl: String(p?.imageUrl ?? p?.image_url ?? p?.url ?? ""),
+        }))
+        .filter((p: any) => p.imageUrl.trim().length > 0);
+      const videos = videosRaw
+        .map((v: any, idx: number) => ({
+          id: String(v?.id ?? `video-${idx}`),
+          title: String(v?.title ?? ""),
+          videoUrl: String(v?.videoUrl ?? v?.video_url ?? v?.url ?? ""),
+        }))
+        .filter((v: any) => v.videoUrl.trim().length > 0);
+      return res.json({ photos, videos });
+    } catch {
+      return res.json({ photos: [], videos: [] });
+    }
+  });
+
+  app.post(api.landingMedia.save.path, async (req, res) => {
+    const admin = await requireAdminPermission(req, res, "gallery");
+    if (!admin) return;
+    try {
+      const input = api.landingMedia.save.input.parse(req.body);
+      await storage.setAppSetting("landing_media_boxes", JSON.stringify(input));
+      await persistAudit(admin.id, "landing_media_saved", { photos: input.photos.length, videos: input.videos.length });
+      return res.json({ ok: true });
+    } catch {
+      return res.status(400).json({ message: "Bad Request" });
+    }
   });
 
   return httpServer;

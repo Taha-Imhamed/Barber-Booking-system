@@ -1,13 +1,14 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
-type Lang = "en" | "tr" | "sq";
-type Dictionary = Record<string, { en: string; tr: string; sq: string }>;
+type Lang = "en" | "tr" | "sq" | "it";
+type Dictionary = Record<string, { en: string; tr: string; sq: string; ar?: string; it?: string }>;
 
 const dictionary: Dictionary = {
   language: { en: "Language", tr: "Dil", sq: "Gjuha" },
   english: { en: "English", tr: "Ingilizce", sq: "Anglisht" },
   turkish: { en: "Turkish", tr: "Turkce", sq: "Turqisht" },
   albanian: { en: "Albanian", tr: "Arnavutca", sq: "Shqip" },
+  italian: { en: "Italian", tr: "Italyanca", sq: "Italisht", ar: "الإيطالية", it: "Italiano" },
   signIn: { en: "Sign In", tr: "Giris Yap", sq: "Hyr" },
   signOut: { en: "Logout", tr: "Cikis Yap", sq: "Dil" },
   timetable: { en: "Timetable", tr: "Zaman Cizelgesi", sq: "Orari" },
@@ -140,7 +141,7 @@ const I18nContext = createContext<{
 export function I18nProvider({ children }: { children: React.ReactNode }) {
   const [lang, setLang] = useState<Lang>(() => {
     const stored = localStorage.getItem("lang");
-    if (stored === "tr" || stored === "sq") return stored;
+    if (stored === "tr" || stored === "sq" || stored === "it") return stored;
     return "en";
   });
 
@@ -151,10 +152,15 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem("lang", next);
         setLang(next);
       },
-      t: (key: keyof typeof dictionary) => dictionary[key][lang],
+      t: (key: keyof typeof dictionary) => dictionary[key][lang] ?? dictionary[key].en,
     }),
     [lang],
   );
+
+  useEffect(() => {
+    document.documentElement.lang = lang;
+    document.documentElement.dir = "ltr";
+  }, [lang]);
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
@@ -162,3 +168,4 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
 export function useI18n() {
   return useContext(I18nContext);
 }
+

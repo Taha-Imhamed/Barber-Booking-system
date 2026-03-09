@@ -13,6 +13,27 @@ type TemplateParams = Record<string, string | number | boolean | null | undefine
 
 let diagnosticsLogged = false;
 
+function resolveEmailJsTemplateId(templateParams?: TemplateParams): string | undefined {
+  const eventType = String(templateParams?.event_type ?? "").trim();
+  if (eventType === "reservation_requested") {
+    return (
+      process.env.EMAILJS_TEMPLATE_ID_WELCOME ||
+      process.env.VITE_EMAILJS_TEMPLATE_ID_WELCOME ||
+      process.env.EMAILJS_TEMPLATE_ID ||
+      process.env.VITE_EMAILJS_TEMPLATE_ID
+    );
+  }
+  if (eventType === "reservation_confirmed") {
+    return (
+      process.env.EMAILJS_TEMPLATE_ID_CONFIRMED ||
+      process.env.VITE_EMAILJS_TEMPLATE_ID_CONFIRMED ||
+      process.env.EMAILJS_TEMPLATE_ID ||
+      process.env.VITE_EMAILJS_TEMPLATE_ID
+    );
+  }
+  return process.env.EMAILJS_TEMPLATE_ID || process.env.VITE_EMAILJS_TEMPLATE_ID;
+}
+
 function getEmailProviderName(): string {
   if (process.env.BREVO_API_KEY) return "brevo";
   if (process.env.RESEND_API_KEY) return "resend";
@@ -93,8 +114,9 @@ async function sendViaResend(to: string, subject: string, text: string): Promise
 
 async function sendViaEmailJs(to: string, subject: string, text: string, templateParams?: TemplateParams): Promise<NotifyResult> {
   const serviceId = process.env.EMAILJS_SERVICE_ID || process.env.VITE_EMAILJS_SERVICE_ID;
-  const templateId = process.env.EMAILJS_TEMPLATE_ID || process.env.VITE_EMAILJS_TEMPLATE_ID;
+  const templateId = resolveEmailJsTemplateId(templateParams);
   const publicKey = process.env.EMAILJS_PUBLIC_KEY || process.env.VITE_EMAILJS_PUBLIC_KEY;
+  const privateKey = process.env.EMAILJS_PRIVATE_KEY || process.env.VITE_EMAILJS_PRIVATE_KEY;
   if (!serviceId || !templateId || !publicKey) {
     return { sent: false, provider: "emailjs", error: "Missing EmailJS config" };
   }
@@ -106,10 +128,15 @@ async function sendViaEmailJs(to: string, subject: string, text: string, templat
       service_id: serviceId,
       template_id: templateId,
       user_id: publicKey,
+      ...(privateKey ? { accessToken: privateKey } : {}),
       template_params: {
         to_email: to,
         to_name: to.split("@")[0] || "Client",
         user_email: to,
+        email: to,
+        recipient_email: to,
+        recipient: to,
+        to,
         subject,
         title: subject,
         message: text,

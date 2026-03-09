@@ -98,6 +98,12 @@ export function useAuth() {
     signInWithGoogle: () => {
       window.location.href = api.auth.google.path;
     },
+    signInWithFacebook: () => {
+      window.location.href = api.auth.facebook.path;
+    },
+    signInWithApple: () => {
+      window.location.href = api.auth.apple.path;
+    },
     resendVerificationEmail: resendVerificationMutation.mutateAsync,
     logout: logoutMutation.mutateAsync,
     isLoggingIn: loginMutation.isPending,

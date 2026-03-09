@@ -15,6 +15,9 @@ import {
   chatGroupMembers,
   chatMessages,
   appSettings,
+  appointmentServices,
+  appointmentReminders,
+  reviews,
   type UserType,
   type BranchType,
   type ServiceType,
@@ -40,7 +43,7 @@ export interface IStorage {
   getUserByEmail(email: string): Promise<UserType | undefined>;
   getUserByGoogleId(googleId: string): Promise<UserType | undefined>;
   getUsers(): Promise<UserType[]>;
-  createUser(user: Omit<UserType, "id">): Promise<UserType>;
+  createUser(user: typeof users.$inferInsert): Promise<UserType>;
   updateUser(id: number, user: Partial<Omit<UserType, "id">>): Promise<UserType>;
   updateUserLoyaltyPoints(userId: number, pointsToAdd: number): Promise<UserType | undefined>;
   getBarbers(): Promise<UserType[]>;
@@ -48,7 +51,7 @@ export interface IStorage {
   
   // Branches
   getBranches(): Promise<BranchType[]>;
-  createBranch(branch: Omit<BranchType, "id">): Promise<BranchType>;
+  createBranch(branch: typeof branches.$inferInsert): Promise<BranchType>;
   deleteBranch(id: number): Promise<boolean>;
   
   // Services
@@ -60,7 +63,7 @@ export interface IStorage {
   getAppointments(): Promise<AppointmentType[]>;
   getAppointment(id: number): Promise<AppointmentType | undefined>;
   getAppointmentsByBarber(barberId: number): Promise<AppointmentType[]>;
-  createAppointment(appointment: Omit<AppointmentType, "id" | "createdAt">): Promise<AppointmentType>;
+  createAppointment(appointment: typeof appointments.$inferInsert): Promise<AppointmentType>;
   updateAppointmentStatus(id: number, status: string): Promise<AppointmentType>;
   updateAppointment(id: number, data: Partial<Omit<AppointmentType, "id" | "createdAt">>): Promise<AppointmentType>;
   getAppointmentsByGuestPhone(phone: string): Promise<AppointmentType[]>;
@@ -145,7 +148,7 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(users).orderBy(desc(users.id));
   }
   
-  async createUser(user: Omit<UserType, "id">): Promise<UserType> {
+  async createUser(user: typeof users.$inferInsert): Promise<UserType> {
     const [newUser] = await db.insert(users).values(user).returning();
     return newUser;
   }
@@ -172,8 +175,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteBarber(id: number): Promise<boolean> {
-    const deleted = await db.delete(users).where(eq(users.id, id)).returning({ id: users.id });
-    return deleted.length > 0;
+    const [updated] = await db
+      .update(users)
+      .set({
+        role: "client",
+        isAvailable: false,
+        branchId: null,
+        adminPermissions: "[]",
+      })
+      .where(eq(users.id, id))
+      .returning({ id: users.id });
+    return Boolean(updated);
   }
   
   // Branches
@@ -181,7 +193,7 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(branches);
   }
   
-  async createBranch(branch: Omit<BranchType, "id">): Promise<BranchType> {
+  async createBranch(branch: typeof branches.$inferInsert): Promise<BranchType> {
     const [newBranch] = await db.insert(branches).values(branch).returning();
     return newBranch;
   }
@@ -223,7 +235,7 @@ export class DatabaseStorage implements IStorage {
     return items.filter((a) => !a.isDeleted);
   }
   
-  async createAppointment(appointment: Omit<AppointmentType, "id" | "createdAt">): Promise<AppointmentType> {
+  async createAppointment(appointment: typeof appointments.$inferInsert): Promise<AppointmentType> {
     const [newAppointment] = await db.insert(appointments).values(appointment).returning();
     return newAppointment;
   }
@@ -254,14 +266,17 @@ export class DatabaseStorage implements IStorage {
     const set = new Set(ids.map((v) => Number(v)));
     const idsToDelete = all.filter((a) => set.has(Number(a.id))).map((a) => a.id);
     if (idsToDelete.length === 0) return 0;
+    const now = new Date();
+    let updated = 0;
     for (const id of idsToDelete) {
-      await db.delete(feedbacks).where(eq(feedbacks.appointmentId, id));
-      await db.delete(adminMessages).where(eq(adminMessages.appointmentId, id));
-      await db.delete(appointmentEarnings).where(eq(appointmentEarnings.appointmentId, id));
-      await db.delete(guestNotifications).where(eq(guestNotifications.appointmentId, id));
-      await db.delete(appointments).where(eq(appointments.id, id));
+      const rows = await db
+        .update(appointments)
+        .set({ isDeleted: true, cancelledAt: now })
+        .where(eq(appointments.id, id))
+        .returning({ id: appointments.id });
+      updated += rows.length;
     }
-    return idsToDelete.length;
+    return updated;
   }
   
   // Feedbacks
