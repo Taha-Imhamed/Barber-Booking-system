@@ -6,6 +6,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { pool } from "./db";
+import { initNotifierDiagnostics } from "./notifier";
 
 const app = express();
 const httpServer = createServer(app);
@@ -61,6 +62,10 @@ async function ensureRuntimeSchema() {
   await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS proposed_by_role text`);
   await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS proposed_status text`);
   await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS is_deleted boolean`);
+  await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS payment_method text`);
+  await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS payment_status text`);
+  await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS prepaid_amount integer`);
+  await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS payment_reference text`);
   await pool.query(`UPDATE users SET auth_provider = COALESCE(auth_provider, 'local')`);
   await pool.query(`UPDATE users SET email_verified = COALESCE(email_verified, false)`);
   await pool.query(`UPDATE users SET is_available = COALESCE(is_available, true)`);
@@ -73,8 +78,17 @@ async function ensureRuntimeSchema() {
   await pool.query(`ALTER TABLE users ALTER COLUMN unavailable_hours SET DEFAULT '[]'`);
   await pool.query(`UPDATE appointments SET proposed_status = COALESCE(proposed_status, 'none')`);
   await pool.query(`UPDATE appointments SET is_deleted = COALESCE(is_deleted, false)`);
+  await pool.query(`UPDATE appointments SET payment_method = COALESCE(payment_method, 'cash_on_arrival')`);
+  await pool.query(`UPDATE appointments SET payment_status = COALESCE(payment_status, 'unpaid')`);
+  await pool.query(`UPDATE appointments SET prepaid_amount = COALESCE(prepaid_amount, 0)`);
   await pool.query(`ALTER TABLE appointments ALTER COLUMN proposed_status SET DEFAULT 'none'`);
   await pool.query(`ALTER TABLE appointments ALTER COLUMN is_deleted SET DEFAULT false`);
+  await pool.query(`ALTER TABLE appointments ALTER COLUMN payment_method SET DEFAULT 'cash_on_arrival'`);
+  await pool.query(`ALTER TABLE appointments ALTER COLUMN payment_status SET DEFAULT 'unpaid'`);
+  await pool.query(`ALTER TABLE appointments ALTER COLUMN prepaid_amount SET DEFAULT 0`);
+  await pool.query(`ALTER TABLE appointments ALTER COLUMN payment_method SET NOT NULL`);
+  await pool.query(`ALTER TABLE appointments ALTER COLUMN payment_status SET NOT NULL`);
+  await pool.query(`ALTER TABLE appointments ALTER COLUMN prepaid_amount SET NOT NULL`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS users_google_id_unique ON users (google_id)`);
 
   await pool.query(`
@@ -215,6 +229,7 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  initNotifierDiagnostics();
   await ensureRuntimeSchema();
   await registerRoutes(httpServer, app);
 

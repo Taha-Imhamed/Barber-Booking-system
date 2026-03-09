@@ -48,7 +48,7 @@ export default function Auth() {
     e.preventDefault();
     try {
       if (!formData.username.trim() || !formData.password.trim()) {
-        throw new Error("Username and password are required.");
+        throw new Error(t("usernamePasswordRequired"));
       }
       if (isLogin) {
         await login({ username: formData.username.trim(), password: formData.password.trim() });
@@ -59,34 +59,34 @@ export default function Auth() {
           localStorage.removeItem("remember_username");
           localStorage.removeItem("remembered_username");
         }
-        toast({ title: "Welcome back" });
+        toast({ title: t("welcomeBack") });
       } else {
         if (formData.password.trim().length < 6) {
-          throw new Error("Password must be at least 6 characters.");
+          throw new Error(t("passwordMin6"));
         }
         await register({ ...formData, username: formData.username.trim(), password: formData.password.trim(), role: "client" });
-        toast({ title: "Account created", description: "Priority + loyalty enabled for your account." });
+        toast({ title: t("accountCreated"), description: t("accountCreatedDesc") });
       }
       setLocation("/");
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Authentication failed",
-        description: error.message || "Try again.",
+        title: t("authFailed"),
+        description: error.message || t("tryAgain"),
       });
     }
   };
 
   const handleResendVerification = async () => {
     if (!formData.email.trim()) {
-      toast({ variant: "destructive", title: "Email required", description: "Enter your email first." });
+      toast({ variant: "destructive", title: t("emailRequired"), description: t("enterEmailFirst") });
       return;
     }
     try {
       const result = await resendVerificationEmail(formData.email.trim());
-      toast({ title: "Verification", description: result.message });
+      toast({ title: t("verification"), description: String(result?.message ?? "") });
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message || "Try again." });
+      toast({ variant: "destructive", title: t("error"), description: error.message || t("tryAgain") });
     }
   };
 
@@ -98,11 +98,11 @@ export default function Auth() {
     fetch(`/api/auth/verify-email?token=${encodeURIComponent(verifyToken)}`, { credentials: "include" })
       .then(async (res) => {
         const data = await res.json();
-        if (!res.ok) throw new Error(data.message || "Verification failed");
-        toast({ title: "Email verified", description: data.message });
+        if (!res.ok) throw new Error(data.message || t("verificationFailed"));
+        toast({ title: t("emailVerified"), description: data.message });
       })
       .catch((err: any) => {
-        toast({ variant: "destructive", title: "Verification failed", description: err.message || "Invalid link." });
+        toast({ variant: "destructive", title: t("verificationFailed"), description: err.message || t("invalidLink") });
       });
   }, [toast]);
 
@@ -134,9 +134,9 @@ export default function Auth() {
 
         <Card className="bg-white/95 dark:bg-zinc-900/95 backdrop-blur border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xl">
           <CardHeader className="text-center">
-            <CardTitle className="text-3xl">{isLogin ? "Istanbul Salon Sign In" : "Create Account"}</CardTitle>
+            <CardTitle className="text-3xl">{isLogin ? t("authSignInTitle") : t("authCreateAccount")}</CardTitle>
             <CardDescription className="text-zinc-500 dark:text-zinc-400">
-              {isLogin ? "Manage your reservations and points" : "Get priority booking and loyalty rewards"}
+              {isLogin ? t("authManageReservations") : t("authGetPriority")}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -144,28 +144,28 @@ export default function Auth() {
               {!isLogin && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>First Name</Label>
+                    <Label>{t("firstName")}</Label>
                     <div className="relative">
                       <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
                       <Input required autoComplete="given-name" className="pl-9" value={formData.firstName} onChange={(e) => updateForm("firstName", e.target.value)} />
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label>Last Name</Label>
+                    <Label>{t("lastName")}</Label>
                     <div className="relative">
                       <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
                       <Input required autoComplete="family-name" className="pl-9" value={formData.lastName} onChange={(e) => updateForm("lastName", e.target.value)} />
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label>Phone</Label>
+                    <Label>{t("phone")}</Label>
                     <div className="relative">
                       <Phone className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
                       <Input required autoComplete="tel" type="tel" className="pl-9" value={formData.phone} onChange={(e) => updateForm("phone", e.target.value)} />
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label>Email</Label>
+                    <Label>{t("email")}</Label>
                     <div className="relative">
                       <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
                       <Input required autoComplete="email" type="email" className="pl-9" value={formData.email} onChange={(e) => updateForm("email", e.target.value)} />
@@ -175,14 +175,14 @@ export default function Auth() {
               )}
 
               <div className="space-y-2">
-                <Label>Username</Label>
+                <Label>{t("username")}</Label>
                 <div className="relative">
                   <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
                   <Input required autoComplete="username" className="pl-9" value={formData.username} onChange={(e) => updateForm("username", e.target.value)} />
                 </div>
               </div>
               <div className="space-y-2">
-                <Label>Password</Label>
+                <Label>{t("password")}</Label>
                 <div className="relative">
                   <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
                   <Input
@@ -197,7 +197,7 @@ export default function Auth() {
                     type="button"
                     onClick={() => setShowPassword((v) => !v)}
                     className="absolute inset-y-0 right-0 px-3 text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
-                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-label={showPassword ? t("hidePassword") : t("showPassword")}
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -206,26 +206,26 @@ export default function Auth() {
               {isLogin && (
                 <label className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-300">
                   <input type="checkbox" checked={rememberUsername} onChange={(e) => setRememberUsername(e.target.checked)} />
-                  Remember username on this device
+                  {t("rememberUsername")}
                 </label>
               )}
 
               <Button type="submit" className="w-full bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200 font-semibold mt-2" disabled={isLoggingIn || isRegistering}>
-                {isLoggingIn || isRegistering ? "Processing..." : isLogin ? "Sign In" : "Create Account"}
+                {isLoggingIn || isRegistering ? t("processing") : isLogin ? t("signIn") : t("authCreateAccount")}
               </Button>
               <Button type="button" variant="outline" className="w-full border-zinc-300 dark:border-zinc-700" onClick={signInWithGoogle}>
                 <GoogleIcon />
-                {t("googleSignIn")} (Clients only)
+                {t("googleSignIn")} {t("clientsOnly")}
               </Button>
               {!isLogin && (
                 <Button type="button" variant="ghost" className="w-full text-zinc-600" onClick={handleResendVerification} disabled={isResendingVerification}>
-                  {isResendingVerification ? "Sending..." : "Resend verification email"}
+                  {isResendingVerification ? t("sending") : t("resendVerification")}
                 </Button>
               )}
 
               <div className="text-center pt-1">
                 <button type="button" onClick={() => setIsLogin(!isLogin)} className="text-sm text-zinc-500 hover:text-zinc-800 transition-colors">
-                  {isLogin ? "Need an account? Register" : "Already have an account? Sign in"}
+                  {isLogin ? t("needAccount") : t("haveAccount")}
                 </button>
               </div>
             </form>

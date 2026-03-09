@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, MapPin, Scissors, User as UserIcon, Clock, ShieldCheck, CircleAlert } from "lucide-react";
+import { Calendar as CalendarIcon, MapPin, Scissors, User as UserIcon, Clock, ShieldCheck, CircleAlert, CreditCard, Wallet, BadgeCheck, ExternalLink } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,6 +17,7 @@ import { useBarbers } from "@/hooks/use-barbers";
 import { useAppointments, useCreateAppointment } from "@/hooks/use-appointments";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
+import { api } from "@shared/routes";
 
 export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?: number | null }) {
   const { toast } = useToast();
@@ -40,10 +41,34 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
     guestLastName: "",
     guestPhone: "",
     guestEmail: "",
+    paymentMethod: "cash_on_arrival",
   });
+  const [pendingPaysera, setPendingPaysera] = useState<{
+    appointmentId: number;
+    reference: string;
+    checkoutUrl: string;
+    amount: number;
+  } | null>(null);
 
   const updateForm = (key: keyof typeof formData, value: string | Date) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const resetForm = () => {
+    setStep(1);
+    setFormData((prev) => ({
+      ...prev,
+      branchId: "",
+      serviceId: "",
+      barberId: "",
+      timeSlot: "",
+      guestFirstName: "",
+      guestLastName: "",
+      guestPhone: "",
+      guestEmail: "",
+      paymentMethod: "cash_on_arrival",
+    }));
+    setPendingPaysera(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -58,14 +83,14 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
       finalDate.setHours(Number.parseInt(hours, 10), Number.parseInt(minutes, 10), 0, 0);
 
       if (!Number.isFinite(parsedBranchId) || !Number.isFinite(parsedServiceId) || !Number.isFinite(parsedBarberId)) {
-        throw new Error("Please choose branch, service, barber, and time.");
+        throw new Error(t("selectRequiredFields"));
       }
       if (user && !Number.isFinite(parsedClientId)) {
-        throw new Error("Invalid account session. Please sign in again.");
+        throw new Error(t("invalidSession"));
       }
       const barberForBranch = barbers?.find((b) => Number(b.id) === parsedBarberId);
       if (barberForBranch?.branchId != null && Number(barberForBranch.branchId) !== parsedBranchId) {
-        throw new Error("Selected barber does not belong to selected branch.");
+        throw new Error(t("barberWrongBranch"));
       }
 
       const payload: Record<string, unknown> = {
@@ -74,6 +99,9 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
         barberId: parsedBarberId,
         appointmentDate: finalDate.toISOString(),
         status: "pending",
+        paymentMethod: formData.paymentMethod,
+        paymentStatus: formData.paymentMethod === "paysera_test" ? "pending" : "unpaid",
+        prepaidAmount: formData.paymentMethod === "paysera_test" ? Math.max(0, Math.floor(Number(selectedService?.price ?? 0))) : 0,
       };
 
       if (user) {
@@ -85,29 +113,74 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
         payload.guestEmail = formData.guestEmail || null;
       }
 
-      await createAppointment.mutateAsync(payload);
+      const appointment = await createAppointment.mutateAsync(payload);
+
+      if (formData.paymentMethod === "paysera_test") {
+        const amount = Math.max(0, Math.floor(Number(selectedService?.price ?? 0)));
+        const sessionRes = await fetch(api.payments.payseraCreateSession.path, {
+          method: api.payments.payseraCreateSession.method,
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ appointmentId: Number(appointment.id), amount }),
+        });
+        const sessionData = await sessionRes.json().catch(() => ({}));
+        if (!sessionRes.ok) {
+          throw new Error(sessionData?.message || "Failed to create Paysera test session");
+        }
+
+        setPendingPaysera({
+          appointmentId: Number(appointment.id),
+          reference: String(sessionData.reference),
+          checkoutUrl: String(sessionData.checkoutUrl),
+          amount,
+        });
+
+        toast({
+          title: "Appointment created (payment pending)",
+          description: "Use the test checkout button, then confirm payment below.",
+        });
+        return;
+      }
 
       toast({
-        title: "Reservation submitted",
-        description: "Your request was sent to the barber. You will get notified on updates.",
+        title: t("reservationSubmitted"),
+        description: t("reservationSubmittedDesc"),
       });
 
-      setStep(1);
-      setFormData({
-        ...formData,
-        branchId: "",
-        serviceId: "",
-        barberId: "",
-        timeSlot: "",
-        guestFirstName: "",
-        guestLastName: "",
-        guestPhone: "",
-        guestEmail: "",
-      });
+      resetForm();
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Could not submit reservation",
+        title: t("reservationFailed"),
+        description: error.message || t("tryAgain"),
+      });
+    }
+  };
+
+  const handleConfirmPayseraTestPayment = async () => {
+    if (!pendingPaysera) return;
+    try {
+      const res = await fetch(api.payments.payseraConfirm.path, {
+        method: api.payments.payseraConfirm.method,
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          appointmentId: pendingPaysera.appointmentId,
+          reference: pendingPaysera.reference,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || "Failed to confirm test payment");
+
+      toast({
+        title: "Payment confirmed",
+        description: "Paysera test payment marked as paid.",
+      });
+      resetForm();
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Payment confirmation failed",
         description: error.message || "Try again.",
       });
     }
@@ -186,18 +259,18 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
       </div>
 
       <CardHeader className="pt-7">
-        <CardTitle className="text-3xl text-center">Book Your Appointment</CardTitle>
-        <CardDescription className="text-center text-zinc-500">Step {step} of 3</CardDescription>
+        <CardTitle className="text-3xl text-center">{t("bookYourAppointment")}</CardTitle>
+        <CardDescription className="text-center text-zinc-500">{t("stepOf3")} {step} {t("of")} 3</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-6">
           {step === 1 && (
             <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
               <div className="space-y-2">
-                <Label className="flex items-center gap-2 text-zinc-700"><MapPin className="w-4 h-4" /> Branch</Label>
+                <Label className="flex items-center gap-2 text-zinc-700"><MapPin className="w-4 h-4" /> {t("branch")}</Label>
                 <Select value={formData.branchId} onValueChange={(v) => updateForm("branchId", v)}>
                   <SelectTrigger className="bg-white border-zinc-300">
-                    <SelectValue placeholder={isLoadingBranches ? "Loading..." : "Select branch"} />
+                    <SelectValue placeholder={isLoadingBranches ? t("loading") : t("selectBranch")} />
                   </SelectTrigger>
                   <SelectContent>
                     {branches?.map((branch) => (
@@ -210,10 +283,10 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
               </div>
 
               <div className="space-y-2">
-                <Label className="flex items-center gap-2 text-zinc-700"><Scissors className="w-4 h-4" /> Service</Label>
+                <Label className="flex items-center gap-2 text-zinc-700"><Scissors className="w-4 h-4" /> {t("service")}</Label>
                 <Select value={formData.serviceId} onValueChange={(v) => updateForm("serviceId", v)}>
                   <SelectTrigger className="bg-white border-zinc-300">
-                    <SelectValue placeholder={isLoadingServices ? "Loading..." : "Select service"} />
+                    <SelectValue placeholder={isLoadingServices ? t("loading") : t("selectService")} />
                   </SelectTrigger>
                   <SelectContent>
                     {services?.map((service) => (
@@ -226,12 +299,12 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
               </div>
 
               <Button type="button" className="w-full bg-zinc-900 hover:bg-zinc-800 text-white font-semibold mt-4" onClick={() => setStep(2)} disabled={!formData.branchId || !formData.serviceId}>
-                Continue
+                {t("continue")}
               </Button>
               {!user && (
                 <div className="space-y-2">
                   <Link href="/check">
-                    <Button type="button" className="w-full bg-amber-600 hover:bg-amber-700 text-white">Check Reservation by Number</Button>
+                    <Button type="button" className="w-full bg-amber-600 hover:bg-amber-700 text-white">{t("checkByNumber")}</Button>
                   </Link>
                 </div>
               )}
@@ -241,15 +314,22 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
           {step === 2 && (
             <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
               <div className="space-y-2">
-                <Label className="flex items-center gap-2 text-zinc-700"><UserIcon className="w-4 h-4" /> Barber</Label>
+                <Label className="flex items-center gap-2 text-zinc-700"><UserIcon className="w-4 h-4" /> {t("barber")}</Label>
                 <Select value={effectiveBarberId} onValueChange={(v) => updateForm("barberId", v)}>
                   <SelectTrigger className="bg-white border-zinc-300">
-                    <SelectValue placeholder={isLoadingBarbers ? "Loading..." : "Select barber"} />
+                    <SelectValue placeholder={isLoadingBarbers ? t("loading") : t("selectBarber")} />
                   </SelectTrigger>
                   <SelectContent>
                     {barbersForBranch?.map((barber) => (
                       <SelectItem key={barber.id} value={barber.id.toString()}>
-                        {barber.firstName} {barber.lastName} ({barber.yearsOfExperience ?? 0}y exp)
+                        <div className="flex items-center gap-2">
+                          <img
+                            src={barber.photoUrl || "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=120&q=80"}
+                            alt={`${barber.firstName} ${barber.lastName}`}
+                            className="h-12 w-12 rounded-md object-cover border border-zinc-300"
+                          />
+                          <span>{barber.firstName} {barber.lastName} ({barber.yearsOfExperience ?? 0} {t("expShort")})</span>
+                        </div>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -261,7 +341,7 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label className="flex items-center gap-2 text-zinc-700"><CalendarIcon className="w-4 h-4" /> Date</Label>
+                  <Label className="flex items-center gap-2 text-zinc-700"><CalendarIcon className="w-4 h-4" /> {t("date")}</Label>
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button
@@ -271,7 +351,7 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
                           !formData.appointmentDate && "text-muted-foreground",
                         )}
                       >
-                        {formData.appointmentDate ? format(formData.appointmentDate, "PPP") : <span>Pick a date</span>}
+                        {formData.appointmentDate ? format(formData.appointmentDate, "PPP") : <span>{t("pickDate")}</span>}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0 bg-white border-zinc-200" align="start">
@@ -280,10 +360,10 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
                   </Popover>
                 </div>
                 <div className="space-y-2">
-                  <Label className="flex items-center gap-2 text-zinc-700"><Clock className="w-4 h-4" /> Time</Label>
+                  <Label className="flex items-center gap-2 text-zinc-700"><Clock className="w-4 h-4" /> {t("time")}</Label>
                   <Select value={formData.timeSlot} onValueChange={(v) => updateForm("timeSlot", v)}>
                     <SelectTrigger className="bg-white border-zinc-300">
-                      <SelectValue placeholder="Select time" />
+                      <SelectValue placeholder={t("selectTime")} />
                     </SelectTrigger>
                     <SelectContent>
                       {timeSlots.map((time) => (
@@ -297,20 +377,20 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
                     </SelectContent>
                   </Select>
                   {formData.timeSlot && blockedSlotSet.has(formData.timeSlot) && (
-                    <p className="text-xs text-red-600">This barber is not available at {formData.timeSlot}.</p>
+                    <p className="text-xs text-red-600">{t("barberUnavailableAt")} {formData.timeSlot}.</p>
                   )}
                   {selectedService && (
-                    <p className="text-xs text-zinc-500">Barber is locked for at least {minimumBarberLockMinutes} minutes per booking.</p>
+                    <p className="text-xs text-zinc-500">{t("barberLockedMinutes")} {minimumBarberLockMinutes} {t("minutesPerBooking")}</p>
                   )}
                 </div>
               </div>
 
               <div className="flex gap-3">
                 <Button type="button" variant="outline" className="w-full border-zinc-300 hover:bg-zinc-100" onClick={() => setStep(1)}>
-                  Back
+                  {t("back")}
                 </Button>
                 <Button type="button" className="w-full bg-zinc-900 hover:bg-zinc-800 text-white font-semibold" onClick={() => setStep(3)} disabled={!effectiveBarberId || !formData.timeSlot || blockedSlotSet.has(formData.timeSlot)}>
-                  Continue
+                  {t("continue")}
                 </Button>
               </div>
             </div>
@@ -320,44 +400,100 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
             <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
               {user ? (
                 <div className="p-4 rounded-lg border border-zinc-200 bg-zinc-50">
-                  <p className="text-zinc-700 font-medium flex items-center gap-2"><ShieldCheck className="w-4 h-4" /> Priority booking enabled for your account.</p>
-                  <p className="text-sm text-zinc-500 mt-1">You earn loyalty points for completed visits and can redeem discounts later.</p>
+                  <p className="text-zinc-700 font-medium flex items-center gap-2"><ShieldCheck className="w-4 h-4" /> {t("priorityEnabled")}</p>
+                  <p className="text-sm text-zinc-500 mt-1">{t("loyaltyEarn")}</p>
                 </div>
               ) : (
                 <>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>First Name</Label>
+                      <Label>{t("firstName")}</Label>
                       <Input className="bg-white border-zinc-300" value={formData.guestFirstName} onChange={(e) => updateForm("guestFirstName", e.target.value)} required />
                     </div>
                     <div className="space-y-2">
-                      <Label>Last Name</Label>
+                      <Label>{t("lastName")}</Label>
                       <Input className="bg-white border-zinc-300" value={formData.guestLastName} onChange={(e) => updateForm("guestLastName", e.target.value)} required />
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label>Phone Number</Label>
+                    <Label>{t("phoneNumber")}</Label>
                     <Input className="bg-white border-zinc-300" type="tel" value={formData.guestPhone} onChange={(e) => updateForm("guestPhone", e.target.value)} required />
                   </div>
                   <div className="space-y-2">
-                    <Label>Email (Optional)</Label>
+                    <Label>{t("emailOptional")}</Label>
                     <Input className="bg-white border-zinc-300" type="email" value={formData.guestEmail} onChange={(e) => updateForm("guestEmail", e.target.value)} />
                   </div>
                 </>
               )}
 
-              <div className="flex gap-3 pt-2">
-                <Button type="button" variant="outline" className="w-full border-zinc-300 hover:bg-zinc-100" onClick={() => setStep(2)}>
-                  Back
-                </Button>
-                <Button
-                  type="submit"
-                  className="w-full bg-zinc-900 hover:bg-zinc-800 text-white font-semibold"
-                  disabled={createAppointment.isPending || (!user && (!formData.guestFirstName || !formData.guestLastName || !formData.guestPhone))}
-                >
-                  {createAppointment.isPending ? "Submitting..." : "Submit Reservation"}
-                </Button>
+              <div className="space-y-2">
+                <Label className="text-zinc-700">Payment option</Label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => updateForm("paymentMethod", "cash_on_arrival")}
+                    className={cn(
+                      "rounded-lg border p-3 text-left transition-colors",
+                      formData.paymentMethod === "cash_on_arrival" ? "border-zinc-900 bg-zinc-100" : "border-zinc-300 bg-white hover:bg-zinc-50",
+                    )}
+                  >
+                    <div className="flex items-center gap-2 font-medium text-zinc-800">
+                      <Wallet className="w-4 h-4" />
+                      Pay at salon
+                    </div>
+                    <p className="text-xs text-zinc-500 mt-1">No prepayment. Pay on arrival.</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateForm("paymentMethod", "paysera_test")}
+                    className={cn(
+                      "rounded-lg border p-3 text-left transition-colors",
+                      formData.paymentMethod === "paysera_test" ? "border-zinc-900 bg-zinc-100" : "border-zinc-300 bg-white hover:bg-zinc-50",
+                    )}
+                  >
+                    <div className="flex items-center gap-2 font-medium text-zinc-800">
+                      <CreditCard className="w-4 h-4" />
+                      Pay in advance (Paysera Test)
+                    </div>
+                    <p className="text-xs text-zinc-500 mt-1">Recommended. This uses test mode only.</p>
+                  </button>
+                </div>
+                {formData.paymentMethod === "paysera_test" && (
+                  <p className="text-sm text-zinc-600 flex items-center gap-2">
+                    <BadgeCheck className="w-4 h-4 text-emerald-600" />
+                    Advance amount: ${Number(selectedService?.price ?? 0)}
+                  </p>
+                )}
               </div>
+
+              {pendingPaysera ? (
+                <div className="space-y-3 p-4 rounded-lg border border-zinc-200 bg-zinc-50">
+                  <p className="text-sm font-medium text-zinc-800">Paysera test payment pending</p>
+                  <p className="text-xs text-zinc-500">Reference: {pendingPaysera.reference}</p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" className="bg-zinc-900 hover:bg-zinc-800 text-white" onClick={() => window.open(pendingPaysera.checkoutUrl, "_blank", "noopener,noreferrer")}>
+                      <ExternalLink className="w-4 h-4 mr-2" />
+                      Open Test Checkout
+                    </Button>
+                    <Button type="button" variant="outline" className="border-zinc-300" onClick={handleConfirmPayseraTestPayment}>
+                      I Completed Test Payment
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-3 pt-2">
+                  <Button type="button" variant="outline" className="w-full border-zinc-300 hover:bg-zinc-100" onClick={() => setStep(2)}>
+                    {t("back")}
+                  </Button>
+                  <Button
+                    type="submit"
+                    className="w-full bg-zinc-900 hover:bg-zinc-800 text-white font-semibold"
+                    disabled={createAppointment.isPending || (!user && (!formData.guestFirstName || !formData.guestLastName || !formData.guestPhone))}
+                  >
+                    {createAppointment.isPending ? t("submitting") : formData.paymentMethod === "paysera_test" ? "Create Appointment + Paysera Test" : t("submitReservation")}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </form>

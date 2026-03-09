@@ -51,6 +51,10 @@ export const appointments = pgTable("appointments", {
   proposedDate: timestamp("proposed_date"),
   proposedByRole: text("proposed_by_role"),
   proposedStatus: text("proposed_status").default("none"), // 'none', 'pending_client', 'accepted', 'declined'
+  paymentMethod: text("payment_method").notNull().default("cash_on_arrival"), // 'cash_on_arrival', 'paysera_test'
+  paymentStatus: text("payment_status").notNull().default("unpaid"), // 'unpaid', 'pending', 'paid', 'failed'
+  prepaidAmount: integer("prepaid_amount").notNull().default(0),
+  paymentReference: text("payment_reference"),
   isDeleted: boolean("is_deleted").default(false),
   createdAt: timestamp("created_at").defaultNow(),
 });

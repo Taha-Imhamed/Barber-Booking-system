@@ -7,9 +7,11 @@ import { Input } from "@/components/ui/input";
 import { useGuestAppointments, useRespondProposedTime } from "@/hooks/use-appointments";
 import { useGuestNotifications, useMarkGuestNotificationRead } from "@/hooks/use-guest-notifications";
 import { useToast } from "@/hooks/use-toast";
+import { useI18n } from "@/i18n";
 
 export default function GuestCheck() {
   const { toast } = useToast();
+  const { t } = useI18n();
   const [phoneInput, setPhoneInput] = useState("");
   const [phone, setPhone] = useState("");
   const [openedMessage, setOpenedMessage] = useState<string>("");
@@ -22,15 +24,15 @@ export default function GuestCheck() {
     <div className="min-h-screen bg-zinc-100 p-4 md:p-8">
       <div className="max-w-4xl mx-auto space-y-6">
         <Card>
-          <CardHeader><CardTitle>Check Appointment by Phone</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t("checkByPhoneTitle")}</CardTitle></CardHeader>
           <CardContent>
             <div className="flex flex-col sm:flex-row gap-2">
-              <Input value={phoneInput} onChange={(e) => setPhoneInput(e.target.value)} placeholder="Enter your phone number" />
-              <Button onClick={() => setPhone(phoneInput.trim())} disabled={!phoneInput.trim()}>Check</Button>
+              <Input value={phoneInput} onChange={(e) => setPhoneInput(e.target.value)} placeholder={t("enterPhone")} />
+              <Button onClick={() => setPhone(phoneInput.trim())} disabled={!phoneInput.trim()}>{t("check")}</Button>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
-              <Link href="/auth"><Button size="sm" variant="outline">Login</Button></Link>
-              <Link href="/"><Button size="sm" variant="outline">Back To Booking</Button></Link>
+              <Link href="/auth"><Button size="sm" variant="outline">{t("login")}</Button></Link>
+              <Link href="/"><Button size="sm" variant="outline">{t("backToBooking")}</Button></Link>
             </div>
           </CardContent>
         </Card>
@@ -39,14 +41,14 @@ export default function GuestCheck() {
           <>
             {openedMessage && (
               <Card className="border-orange-300 bg-orange-50 dark:bg-zinc-900 dark:border-orange-500/60">
-                <CardHeader><CardTitle className="text-base">Opened Message</CardTitle></CardHeader>
+                <CardHeader><CardTitle className="text-base">{t("openedMessage")}</CardTitle></CardHeader>
                 <CardContent><p>{openedMessage}</p></CardContent>
               </Card>
             )}
             <Card>
-              <CardHeader><CardTitle>Notifications</CardTitle></CardHeader>
+              <CardHeader><CardTitle>{t("notifications")}</CardTitle></CardHeader>
               <CardContent className="space-y-3">
-                {(notifications ?? []).length === 0 && <p className="text-zinc-500">No notifications.</p>}
+                {(notifications ?? []).length === 0 && <p className="text-zinc-500">{t("noNotifications")}</p>}
                 {(notifications ?? []).map((n) => (
                   <div key={n.id} className="border rounded-lg p-3 flex items-center justify-between gap-3">
                     <div>
@@ -61,7 +63,7 @@ export default function GuestCheck() {
                         if (!n.isRead) markRead.mutate(n.id);
                       }}
                     >
-                      {n.isRead ? "Open Message" : "Read Message"}
+                      {n.isRead ? t("openMessage") : t("readMessage")}
                     </Button>
                   </div>
                 ))}
@@ -69,29 +71,29 @@ export default function GuestCheck() {
             </Card>
 
             <Card>
-              <CardHeader><CardTitle>Appointments</CardTitle></CardHeader>
+              <CardHeader><CardTitle>{t("appointments")}</CardTitle></CardHeader>
               <CardContent className="space-y-3">
-                {(appointments ?? []).length === 0 && <p className="text-zinc-500">No appointments found for this phone.</p>}
+                {(appointments ?? []).length === 0 && <p className="text-zinc-500">{t("noAppointmentsForPhone")}</p>}
                 {(appointments ?? []).map((apt) => (
                   <div key={apt.id} className="border rounded-lg p-3 space-y-2">
                     <p className="font-semibold">#{apt.id} - {format(new Date(apt.appointmentDate), "PPP p")}</p>
-                    <p className="text-sm uppercase text-zinc-600">Status: {apt.status}</p>
+                    <p className="text-sm uppercase text-zinc-600">{t("status")}: {apt.status}</p>
                     {apt.status === "postponed" && apt.proposedStatus === "pending_client" && apt.proposedDate && (
                       <div className="postpone-panel rounded-md p-3">
-                        <p className="text-sm mb-2">New proposed time: {format(new Date(apt.proposedDate), "PPP p")}</p>
+                        <p className="text-sm mb-2">{t("newProposedTime")}: {format(new Date(apt.proposedDate), "PPP p")}</p>
                         <div className="flex gap-2">
                           <Button
                             size="sm"
                             onClick={async () => {
                               try {
                                 await respond.mutateAsync({ id: apt.id, action: "accept" });
-                                toast({ title: "New time accepted" });
+                                toast({ title: t("newTimeAccepted") });
                               } catch (err: any) {
-                                toast({ variant: "destructive", title: "Error", description: err.message });
+                                toast({ variant: "destructive", title: t("error"), description: err.message });
                               }
                             }}
                           >
-                            Accept
+                            {t("accept")}
                           </Button>
                           <Button
                             size="sm"
@@ -99,13 +101,13 @@ export default function GuestCheck() {
                             onClick={async () => {
                               try {
                                 await respond.mutateAsync({ id: apt.id, action: "decline" });
-                                toast({ title: "You asked for another time" });
+                                toast({ title: t("askedAnotherTime") });
                               } catch (err: any) {
-                                toast({ variant: "destructive", title: "Error", description: err.message });
+                                toast({ variant: "destructive", title: t("error"), description: err.message });
                               }
                             }}
                           >
-                            Another Time
+                            {t("anotherTime")}
                           </Button>
                         </div>
                       </div>

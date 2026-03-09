@@ -121,6 +121,18 @@
   .fade-rise {
     animation: fadeRise 420ms ease-out both;
   }
+  .tip-panel {
+    @apply rounded-lg border border-zinc-200 bg-zinc-50 p-2 min-w-[150px] transition;
+  }
+  .tip-panel--active {
+    @apply border-emerald-300 bg-emerald-50;
+  }
+  .tip-panel__label {
+    @apply block text-[11px] font-medium text-zinc-600 mb-1;
+  }
+  .tip-panel__input {
+    @apply h-8 bg-white border-zinc-300 text-sm;
+  }
 
   .admin-theme .bg-white,
   .barber-theme .bg-white {

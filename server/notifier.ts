@@ -11,6 +11,29 @@ type MultiNotifyResult = {
 
 type TemplateParams = Record<string, string | number | boolean | null | undefined>;
 
+let diagnosticsLogged = false;
+
+function getEmailProviderName(): string {
+  if (process.env.BREVO_API_KEY) return "brevo";
+  if (process.env.RESEND_API_KEY) return "resend";
+  if (process.env.EMAILJS_SERVICE_ID || process.env.VITE_EMAILJS_SERVICE_ID) return "emailjs";
+  return "console";
+}
+
+export function initNotifierDiagnostics(): void {
+  if (diagnosticsLogged) return;
+  diagnosticsLogged = true;
+
+  const provider = getEmailProviderName();
+  console.log("[notifier] email provider:", provider);
+
+  if (provider === "console") {
+    console.warn(
+      "[notifier] No email provider configured. Set BREVO_API_KEY+BREVO_SENDER_EMAIL, or RESEND_API_KEY+RESEND_SENDER_EMAIL, or EmailJS vars.",
+    );
+  }
+}
+
 async function sendViaBrevo(to: string, subject: string, text: string): Promise<NotifyResult> {
   const apiKey = process.env.BREVO_API_KEY;
   const senderEmail = process.env.BREVO_SENDER_EMAIL;
@@ -34,7 +57,8 @@ async function sendViaBrevo(to: string, subject: string, text: string): Promise<
   });
 
   if (!response.ok) {
-    return { sent: false, provider: "brevo", error: `HTTP ${response.status}` };
+    const details = await response.text().catch(() => "");
+    return { sent: false, provider: "brevo", error: `HTTP ${response.status}${details ? `: ${details}` : ""}` };
   }
   return { sent: true, provider: "brevo" };
 }
@@ -61,7 +85,8 @@ async function sendViaResend(to: string, subject: string, text: string): Promise
   });
 
   if (!response.ok) {
-    return { sent: false, provider: "resend", error: `HTTP ${response.status}` };
+    const details = await response.text().catch(() => "");
+    return { sent: false, provider: "resend", error: `HTTP ${response.status}${details ? `: ${details}` : ""}` };
   }
   return { sent: true, provider: "resend" };
 }
@@ -102,19 +127,22 @@ async function sendViaEmailJs(to: string, subject: string, text: string, templat
 }
 
 export async function sendEmail(to: string, subject: string, text: string, templateParams?: TemplateParams): Promise<NotifyResult> {
-  if (!to) return { sent: false, provider: "none", error: "No recipient email" };
+  const normalizedTo = String(to ?? "").trim();
+  if (!normalizedTo) return { sent: false, provider: "none", error: "No recipient email" };
+
+  initNotifierDiagnostics();
 
   if (process.env.BREVO_API_KEY) {
-    return sendViaBrevo(to, subject, text);
+    return sendViaBrevo(normalizedTo, subject, text);
   }
   if (process.env.RESEND_API_KEY) {
-    return sendViaResend(to, subject, text);
+    return sendViaResend(normalizedTo, subject, text);
   }
   if (process.env.EMAILJS_SERVICE_ID || process.env.VITE_EMAILJS_SERVICE_ID) {
-    return sendViaEmailJs(to, subject, text, templateParams);
+    return sendViaEmailJs(normalizedTo, subject, text, templateParams);
   }
 
-  console.log("[email:console]", { to, subject, text });
+  console.log("[email:console]", { to: normalizedTo, subject, text });
   return { sent: false, provider: "console", error: "No provider configured" };
 }
 

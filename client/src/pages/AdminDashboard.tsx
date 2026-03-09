@@ -26,7 +26,17 @@ import { useQueryClient } from "@tanstack/react-query";
 import { playNotificationTone } from "@/lib/playNotificationTone";
 import { useTheme } from "@/hooks/use-theme";
 
-type AdminTab = "appointments" | "barbers" | "services" | "reports" | "timetable" | "finance" | "chat" | "wallDisplay";
+type AdminTab =
+  | "appointments"
+  | "barbers"
+  | "services"
+  | "reports"
+  | "timetable"
+  | "finance"
+  | "chat"
+  | "wallDisplay"
+  | "users"
+  | "developer";
 
 export default function AdminDashboard() {
   const [, setLocation] = useLocation();
@@ -81,6 +91,15 @@ export default function AdminDashboard() {
   const [wallShowWeather, setWallShowWeather] = useState(true);
   const [wallShowMusic, setWallShowMusic] = useState(true);
   const [wallQueueLimit, setWallQueueLimit] = useState("6");
+  const [userViewType, setUserViewType] = useState<"all" | "barber" | "client">("all");
+  const [adminUsers, setAdminUsers] = useState<any[]>([]);
+  const [adminUsersNote, setAdminUsersNote] = useState("");
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [developerSnapshot, setDeveloperSnapshot] = useState<any | null>(null);
+  const [developerLoading, setDeveloperLoading] = useState(false);
+  const [developerUnlocked, setDeveloperUnlocked] = useState(false);
+  const [developerSearch, setDeveloperSearch] = useState("");
+  const [developerAutoRefresh, setDeveloperAutoRefresh] = useState(false);
 
   const exportCsv = (filename: string, rows: Record<string, unknown>[]) => {
     if (!rows.length) return;
@@ -335,6 +354,70 @@ export default function AdminDashboard() {
     setExpenseItems(await res.json());
   };
 
+  const loadAdminUsers = async (type: "all" | "barber" | "client" = userViewType) => {
+    setUsersLoading(true);
+    try {
+      const res = await fetch(`${api.admin.usersList.path}?type=${type}`, { credentials: "include" });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast({ variant: "destructive", title: "Failed to load users", description: payload?.message ?? "Request failed" });
+        return;
+      }
+      setAdminUsers(Array.isArray(payload.users) ? payload.users : []);
+      setAdminUsersNote(typeof payload.note === "string" ? payload.note : "");
+    } finally {
+      setUsersLoading(false);
+    }
+  };
+
+  const loadDeveloperSnapshot = async () => {
+    setDeveloperLoading(true);
+    try {
+      const res = await fetch(api.admin.developerSnapshot.path, { credentials: "include" });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast({ variant: "destructive", title: "Failed to load developer monitor", description: payload?.message ?? "Request failed" });
+        return;
+      }
+      setDeveloperSnapshot(payload.snapshot ?? null);
+    } finally {
+      setDeveloperLoading(false);
+    }
+  };
+
+  const exportDeveloperData = async () => {
+    const res = await fetch(api.admin.developerExport.path, { credentials: "include" });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      toast({ variant: "destructive", title: "Export failed", description: payload?.message ?? "Request failed" });
+      return;
+    }
+    const blob = await res.blob();
+    const contentDisposition = res.headers.get("content-disposition") ?? "";
+    const match = contentDisposition.match(/filename=\"?([^\";]+)\"?/i);
+    const filename = match?.[1] ?? `developer-export-${Date.now()}.json`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const requestDeveloperAccess = () => {
+    if (developerUnlocked) return true;
+    const entered = window.prompt("Developer password:");
+    if (entered === "memo") {
+      setDeveloperUnlocked(true);
+      toast({ title: "Developer access granted" });
+      return true;
+    }
+    toast({ variant: "destructive", title: "Wrong password for Developer tab" });
+    return false;
+  };
+
   const loadGroupMessages = async (groupId: number) => {
     const res = await fetch(api.chat.messages.path.replace(":id", String(groupId)), { credentials: "include" });
     if (res.ok) setGroupMessages(await res.json());
@@ -444,12 +527,76 @@ export default function AdminDashboard() {
     void loadExpenses();
   }, []);
 
+  useEffect(() => {
+    if (activeTab === "users") {
+      void loadAdminUsers(userViewType);
+    }
+    if (activeTab === "developer") {
+      void loadDeveloperSnapshot();
+    }
+  }, [activeTab, userViewType]);
+
+  useEffect(() => {
+    if (!(activeTab === "developer" && developerAutoRefresh)) return;
+    const timer = window.setInterval(() => {
+      void loadDeveloperSnapshot();
+    }, 15000);
+    return () => window.clearInterval(timer);
+  }, [activeTab, developerAutoRefresh]);
+
   if (isLoading) return <div className="p-8 text-center text-zinc-500">Loading dashboard...</div>;
   if (user?.role !== "admin") return <div className="p-8 text-center text-red-500">Access denied. Admin only.</div>;
 
   return (
-    <div className="admin-theme min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-stone-100 dark:from-zinc-950 dark:via-zinc-900 dark:to-slate-900 text-zinc-900 dark:text-zinc-100 flex flex-col md:flex-row">
-      <aside className="w-full md:w-72 bg-white/85 dark:bg-zinc-900/80 backdrop-blur border-r border-amber-200 dark:border-zinc-800 p-6 flex flex-col">
+    <div className={`admin-theme min-h-screen flex flex-col md:flex-row ${activeTab === "developer" ? "admin-dark-theme bg-black text-white" : "bg-gradient-to-br from-orange-50 via-amber-50 to-stone-100 dark:from-zinc-950 dark:via-zinc-900 dark:to-slate-900 text-zinc-900 dark:text-zinc-100"}`}>
+      <style>{`
+        .admin-dark-theme {
+          background: #050505 !important;
+          color: #ffffff !important;
+        }
+        .admin-dark-theme aside,
+        .admin-dark-theme main {
+          background: #070707 !important;
+          color: #ffffff !important;
+        }
+        .admin-dark-theme .bg-white,
+        .admin-dark-theme .bg-white\\/85,
+        .admin-dark-theme .bg-amber-50,
+        .admin-dark-theme .bg-orange-50,
+        .admin-dark-theme .bg-stone-100,
+        .admin-dark-theme .rounded-xl,
+        .admin-dark-theme .card {
+          background: #121212 !important;
+          color: #ffffff !important;
+          border-color: #2a2a2a !important;
+        }
+        .admin-dark-theme .text-zinc-500,
+        .admin-dark-theme .text-zinc-400,
+        .admin-dark-theme .text-zinc-600 {
+          color: #d1d5db !important;
+        }
+        .admin-dark-theme [role="tab"],
+        .admin-dark-theme .admin-link-blur {
+          color: #93c5fd !important;
+          background: rgba(20, 20, 25, 0.55) !important;
+          border: 1px solid rgba(59, 130, 246, 0.3) !important;
+          backdrop-filter: blur(10px);
+          -webkit-backdrop-filter: blur(10px);
+        }
+        .admin-dark-theme [role="tab"][data-state="active"] {
+          color: #ffffff !important;
+          background: rgba(37, 99, 235, 0.35) !important;
+          border-color: rgba(147, 197, 253, 0.6) !important;
+        }
+        .admin-dark-theme .admin-link-blur:hover {
+          background: rgba(37, 99, 235, 0.2) !important;
+          color: #bfdbfe !important;
+        }
+        .admin-dark-theme pre {
+          color: #f3f4f6 !important;
+        }
+      `}</style>
+      <aside className={`w-full md:w-72 p-6 flex flex-col ${activeTab === "developer" ? "bg-black/80 backdrop-blur-xl border-r border-blue-400/30" : "bg-white/85 dark:bg-zinc-900/80 backdrop-blur border-r border-amber-200 dark:border-zinc-800"}`}>
         <h2 className="text-2xl font-semibold mb-2">Istanbul Salon</h2>
         <div className="mb-8 flex items-center justify-between gap-3">
           <p className="text-sm text-zinc-500 dark:text-zinc-400">Admin Control</p>
@@ -458,29 +605,42 @@ export default function AdminDashboard() {
           </Button>
         </div>
         <nav className="space-y-2 flex-1">
-          <Button variant={activeTab === "appointments" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("appointments")}>
+          <Button variant={activeTab === "appointments" ? "default" : "ghost"} className="w-full justify-start admin-link-blur" onClick={() => setActiveTab("appointments")}>
             <CalendarDays className="mr-3 h-5 w-5" /> Appointments
           </Button>
-          <Button variant={activeTab === "barbers" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("barbers")}>
+          <Button variant={activeTab === "barbers" ? "default" : "ghost"} className="w-full justify-start admin-link-blur" onClick={() => setActiveTab("barbers")}>
             <Users className="mr-3 h-5 w-5" /> Barbers & Branches
           </Button>
-          <Button variant={activeTab === "services" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("services")}>
+          <Button variant={activeTab === "services" ? "default" : "ghost"} className="w-full justify-start admin-link-blur" onClick={() => setActiveTab("services")}>
             <Scissors className="mr-3 h-5 w-5" /> Services
           </Button>
-          <Button variant={activeTab === "reports" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("reports")}>
+          <Button variant={activeTab === "reports" ? "default" : "ghost"} className="w-full justify-start admin-link-blur" onClick={() => setActiveTab("reports")}>
             <FileBarChart2 className="mr-3 h-5 w-5" /> Reports
           </Button>
-          <Button variant={activeTab === "timetable" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("timetable")}>
+          <Button variant={activeTab === "timetable" ? "default" : "ghost"} className="w-full justify-start admin-link-blur" onClick={() => setActiveTab("timetable")}>
             <CalendarDays className="mr-3 h-5 w-5" /> Timetable
           </Button>
-          <Button variant={activeTab === "finance" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("finance")}>
+          <Button variant={activeTab === "finance" ? "default" : "ghost"} className="w-full justify-start admin-link-blur" onClick={() => setActiveTab("finance")}>
             <BarChart3 className="mr-3 h-5 w-5" /> Finance
           </Button>
-          <Button variant={activeTab === "chat" ? "default" : "ghost"} className="w-full justify-start" onClick={() => { setActiveTab("chat"); void loadGroups(); }}>
+          <Button variant={activeTab === "chat" ? "default" : "ghost"} className="w-full justify-start admin-link-blur" onClick={() => { setActiveTab("chat"); void loadGroups(); }}>
             <MessageSquareText className="mr-3 h-5 w-5" /> Group Chat
           </Button>
-          <Button variant={activeTab === "wallDisplay" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("wallDisplay")}>
+          <Button variant={activeTab === "wallDisplay" ? "default" : "ghost"} className="w-full justify-start admin-link-blur" onClick={() => setActiveTab("wallDisplay")}>
             <CalendarDays className="mr-3 h-5 w-5" /> Wall Display
+          </Button>
+          <Button variant={activeTab === "users" ? "default" : "ghost"} className="w-full justify-start admin-link-blur" onClick={() => setActiveTab("users")}>
+            <Users className="mr-3 h-5 w-5" /> Users
+          </Button>
+          <Button
+            variant={activeTab === "developer" ? "default" : "ghost"}
+            className="w-full justify-start admin-link-blur"
+            onClick={() => {
+              if (!requestDeveloperAccess()) return;
+              setActiveTab("developer");
+            }}
+          >
+            <BarChart3 className="mr-3 h-5 w-5" /> Developer
           </Button>
         </nav>
         <div className="mt-auto pt-6 border-t border-amber-100">
@@ -504,7 +664,7 @@ export default function AdminDashboard() {
         </div>
       </aside>
 
-      <main className="flex-1 p-6 md:p-8 overflow-y-auto">
+      <main className={`flex-1 p-6 md:p-8 overflow-y-auto ${activeTab === "developer" ? "bg-black text-white" : ""}`}>
         <h1 className="text-3xl font-semibold mb-8">Operations Dashboard</h1>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
@@ -522,7 +682,15 @@ export default function AdminDashboard() {
           </Card>
         </div>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as AdminTab)} className="w-full">
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => {
+            const next = v as AdminTab;
+            if (next === "developer" && !requestDeveloperAccess()) return;
+            setActiveTab(next);
+          }}
+          className="w-full"
+        >
           <TabsList className="bg-white border border-amber-100 mb-6 w-full overflow-x-auto flex-wrap h-auto">
             <TabsTrigger value="appointments">Appointments</TabsTrigger>
             <TabsTrigger value="barbers">Barbers & Branches</TabsTrigger>
@@ -532,6 +700,8 @@ export default function AdminDashboard() {
             <TabsTrigger value="finance">Finance</TabsTrigger>
             <TabsTrigger value="chat">Group Chat</TabsTrigger>
             <TabsTrigger value="wallDisplay">Wall Display</TabsTrigger>
+            <TabsTrigger value="users">Users</TabsTrigger>
+            <TabsTrigger value="developer">Developer</TabsTrigger>
           </TabsList>
 
           <TabsContent value="appointments" className="space-y-6">
@@ -1351,6 +1521,239 @@ export default function AdminDashboard() {
                   ))}
                 </TableBody>
               </Table>
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="users" className="space-y-6">
+            <div className="rounded-xl border border-blue-300 bg-blue-50 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-medium text-blue-900">Admin users list</p>
+                <Select value={userViewType} onValueChange={(v) => setUserViewType(v as "all" | "barber" | "client")}>
+                  <SelectTrigger className="w-44 bg-white">
+                    <SelectValue placeholder="Filter role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All users</SelectItem>
+                    <SelectItem value="barber">Barbers</SelectItem>
+                    <SelectItem value="client">Clients</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button size="sm" variant="outline" onClick={() => void loadAdminUsers(userViewType)}>
+                  Refresh
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    exportCsv(
+                      `users-${userViewType}.csv`,
+                      adminUsers.map((u) => ({
+                        id: u.id,
+                        role: u.role,
+                        username: u.username ?? "",
+                        passwordHash: u.passwordHash ?? "",
+                        firstName: u.firstName ?? "",
+                        lastName: u.lastName ?? "",
+                        email: u.email ?? "",
+                        phone: u.phone ?? "",
+                        authProvider: u.authProvider ?? "",
+                        emailVerified: String(Boolean(u.emailVerified)),
+                        branchId: u.branchId ?? "",
+                        reservationCount: u.reservationCount ?? 0,
+                      })),
+                    )
+                  }
+                >
+                  Export CSV
+                </Button>
+              </div>
+              {adminUsersNote ? <p className="text-xs text-blue-700 mt-2">{adminUsersNote}</p> : null}
+            </div>
+
+            <div className="rounded-xl border border-blue-300 bg-white p-4">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>ID</TableHead>
+                      <TableHead>Role</TableHead>
+                      <TableHead>Username</TableHead>
+                      <TableHead>Password / Hash</TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Phone</TableHead>
+                      <TableHead>Provider</TableHead>
+                      <TableHead>Email Verified</TableHead>
+                      <TableHead>Reservations</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {usersLoading ? (
+                      <TableRow>
+                        <TableCell colSpan={10} className="text-center text-zinc-500">Loading users...</TableCell>
+                      </TableRow>
+                    ) : adminUsers.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={10} className="text-center text-zinc-500">No users found.</TableCell>
+                      </TableRow>
+                    ) : (
+                      adminUsers.map((u) => (
+                        <TableRow key={`admin-user-${u.id}`}>
+                          <TableCell>{u.id}</TableCell>
+                          <TableCell className="uppercase">{u.role}</TableCell>
+                          <TableCell>{u.username || "-"}</TableCell>
+                          <TableCell className="max-w-[280px] break-all text-xs text-zinc-600">{u.passwordHash || "-"}</TableCell>
+                          <TableCell>{`${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || "-"}</TableCell>
+                          <TableCell>{u.email || "-"}</TableCell>
+                          <TableCell>{u.phone || "-"}</TableCell>
+                          <TableCell>{u.authProvider || "-"}</TableCell>
+                          <TableCell>{u.emailVerified ? "yes" : "no"}</TableCell>
+                          <TableCell>{u.reservationCount ?? 0}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="developer" className="space-y-6">
+            <div className="bg-[#1a1b1e] border border-zinc-700 rounded-lg p-4 text-zinc-100">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-lg font-semibold">Developer Dashboard</p>
+                <Button size="sm" variant="outline" className="border-zinc-600 text-zinc-100 hover:bg-zinc-700" onClick={() => void loadDeveloperSnapshot()}>
+                  Refresh
+                </Button>
+                <Button size="sm" variant="outline" className="border-zinc-600 text-zinc-100 hover:bg-zinc-700" onClick={() => void exportDeveloperData()}>
+                  Export JSON
+                </Button>
+                <div className="ml-auto flex items-center gap-2">
+                  <Input
+                    className="w-60 bg-zinc-900 border-zinc-600 text-zinc-100"
+                    placeholder="Search logs/path/user..."
+                    value={developerSearch}
+                    onChange={(e) => setDeveloperSearch(e.target.value)}
+                  />
+                  <label className="text-xs flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      checked={developerAutoRefresh}
+                      onChange={(e) => setDeveloperAutoRefresh(e.target.checked)}
+                    />
+                    Auto refresh 15s
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 xl:grid-cols-6 gap-3">
+              <div className="bg-[#2a2b2f] border border-zinc-700 rounded-lg p-4 text-zinc-100">
+                <p className="text-sm text-zinc-400">Problems</p>
+                <p className="text-4xl font-bold text-red-500">{(developerSnapshot?.authAndSecurity?.vulnerabilities ?? []).length}</p>
+              </div>
+              <div className="bg-[#2a2b2f] border border-zinc-700 rounded-lg p-4 text-zinc-100">
+                <p className="text-sm text-zinc-400">Security score</p>
+                <p className="text-3xl font-bold text-blue-400">{developerSnapshot?.authAndSecurity?.securityScore ?? 0}%</p>
+              </div>
+              <div className="bg-[#2a2b2f] border border-zinc-700 rounded-lg p-4 text-zinc-100">
+                <p className="text-sm text-zinc-400">Database</p>
+                <p className="text-lg font-semibold">{developerSnapshot?.network?.dbStatus ?? "-"}</p>
+                <p className="text-xs text-zinc-400">{developerSnapshot?.network?.dbLatencyMs ?? "-"} ms</p>
+              </div>
+              <div className="bg-[#2a2b2f] border border-zinc-700 rounded-lg p-4 text-zinc-100">
+                <p className="text-sm text-zinc-400">Routes</p>
+                <p className="text-3xl font-bold">{developerSnapshot?.counts?.routes ?? 0}</p>
+              </div>
+              <div className="bg-[#2a2b2f] border border-zinc-700 rounded-lg p-4 text-zinc-100">
+                <p className="text-sm text-zinc-400">Users</p>
+                <p className="text-3xl font-bold">{developerSnapshot?.counts?.users ?? 0}</p>
+              </div>
+              <div className="bg-[#2a2b2f] border border-zinc-700 rounded-lg p-4 text-zinc-100">
+                <p className="text-sm text-zinc-400">Appointments</p>
+                <p className="text-3xl font-bold">{developerSnapshot?.counts?.appointments ?? 0}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+              <div className="bg-[#2a2b2f] border border-zinc-700 rounded-lg p-4 text-zinc-100">
+                <h3 className="text-sm font-semibold mb-2 text-zinc-300">Security / Vulnerabilities</h3>
+                {developerLoading ? (
+                  <p className="text-sm text-zinc-400">Loading snapshot...</p>
+                ) : (
+                  <>
+                    <p className="text-sm">Auth: <strong>{developerSnapshot?.authAndSecurity?.mode ?? "-"}</strong> | JWT: <strong>{String(developerSnapshot?.authAndSecurity?.jwtEnabled ?? false)}</strong></p>
+                    <p className="text-sm">Firewall: <strong>{developerSnapshot?.authAndSecurity?.firewall ?? "-"}</strong></p>
+                    <ul className="mt-2 text-sm list-disc pl-5 text-zinc-300">
+                      {(developerSnapshot?.authAndSecurity?.vulnerabilities ?? []).length === 0 ? (
+                        <li>No vulnerability flags from runtime checks.</li>
+                      ) : (
+                        (developerSnapshot?.authAndSecurity?.vulnerabilities ?? []).map((v: string, idx: number) => (
+                          <li key={`vuln-${idx}`}>{v}</li>
+                        ))
+                      )}
+                    </ul>
+                  </>
+                )}
+              </div>
+
+              <div className="bg-[#2a2b2f] border border-zinc-700 rounded-lg p-4 text-zinc-100">
+                <h3 className="text-sm font-semibold mb-2 text-zinc-300">Login / Auth History</h3>
+                <div className="max-h-72 overflow-auto text-xs bg-[#1e1f23] border border-zinc-700 rounded p-2">
+                  <pre>
+                    {JSON.stringify(
+                      (developerSnapshot?.loginHistory ?? []).filter((l: any) => {
+                        if (!developerSearch.trim()) return true;
+                        const s = JSON.stringify(l).toLowerCase();
+                        return s.includes(developerSearch.toLowerCase());
+                      }).slice(0, 120),
+                      null,
+                      2,
+                    )}
+                  </pre>
+                </div>
+              </div>
+
+              <div className="bg-[#2a2b2f] border border-zinc-700 rounded-lg p-4 text-zinc-100">
+                <h3 className="text-sm font-semibold mb-2 text-zinc-300">API Calls / Network Status</h3>
+                <div className="max-h-72 overflow-auto text-xs bg-[#1e1f23] border border-zinc-700 rounded p-2">
+                  <pre>
+                    {JSON.stringify(
+                      (developerSnapshot?.recentApiCalls ?? []).filter((l: any) => {
+                        if (!developerSearch.trim()) return true;
+                        const s = JSON.stringify(l).toLowerCase();
+                        return s.includes(developerSearch.toLowerCase());
+                      }).slice(0, 180),
+                      null,
+                      2,
+                    )}
+                  </pre>
+                </div>
+              </div>
+
+              <div className="bg-[#2a2b2f] border border-zinc-700 rounded-lg p-4 text-zinc-100">
+                <h3 className="text-sm font-semibold mb-2 text-zinc-300">Reservation + Payment History</h3>
+                <div className="max-h-72 overflow-auto text-xs bg-[#1e1f23] border border-zinc-700 rounded p-2">
+                  <pre>
+                    {JSON.stringify(
+                      (developerSnapshot?.recentReservations ?? []).filter((l: any) => {
+                        if (!developerSearch.trim()) return true;
+                        const s = JSON.stringify(l).toLowerCase();
+                        return s.includes(developerSearch.toLowerCase());
+                      }).slice(0, 180),
+                      null,
+                      2,
+                    )}
+                  </pre>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-[#2a2b2f] border border-zinc-700 rounded-lg p-4 text-zinc-100">
+              <h3 className="text-sm font-semibold mb-2 text-zinc-300">Registered API Routes</h3>
+              <div className="max-h-56 overflow-auto text-xs bg-[#1e1f23] border border-zinc-700 rounded p-2">
+                <pre>{JSON.stringify((developerSnapshot?.routes ?? []).slice(0, 500), null, 2)}</pre>
               </div>
             </div>
           </TabsContent>

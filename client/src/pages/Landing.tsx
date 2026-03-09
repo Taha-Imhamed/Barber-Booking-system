@@ -28,33 +28,33 @@ export default function Landing() {
         <div className="max-w-7xl mx-auto grid lg:grid-cols-[1.1fr_1fr] gap-10 items-start relative z-10">
           <div className="order-2 lg:order-1 space-y-6 text-white fade-rise">
             <div className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-black/20 px-4 py-2 text-xs font-semibold uppercase tracking-wider">
-              Priority booking available for signed-in clients
+              {t("priorityBadge")}
             </div>
             <h1 className="text-4xl md:text-6xl leading-tight font-semibold">
-              Istanbul Salon.
+              {t("heroLine1")}
               <br />
-              Reserve fast.
+              {t("heroLine2")}
               <br />
-              Arrive ready.
+              {t("heroLine3")}
             </h1>
             <p className="max-w-xl text-lg text-zinc-100">
-              Pick branch, barber, service, date, and time in under a minute. Sign up as client to save history and loyalty points.
+              {t("heroDesc")}
             </p>
             <div className="grid sm:grid-cols-3 gap-3">
               <div className="rounded-xl border border-white/20 bg-black/25 p-4 fade-rise">
                 <CalendarClock className="w-5 h-5 text-amber-300 mb-2" />
-                <p className="font-semibold">Real-time approval</p>
-                <p className="text-sm text-zinc-200">Barbers accept, reject, or postpone requests.</p>
+                <p className="font-semibold">{t("realtimeApproval")}</p>
+                <p className="text-sm text-zinc-200">{t("realtimeApprovalDesc")}</p>
               </div>
               <div className="rounded-xl border border-white/20 bg-black/25 p-4 fade-rise">
                 <ShieldCheck className="w-5 h-5 text-amber-300 mb-2" />
-                <p className="font-semibold">Priority system</p>
-                <p className="text-sm text-zinc-200">Registered users are prioritized.</p>
+                <p className="font-semibold">{t("prioritySystem")}</p>
+                <p className="text-sm text-zinc-200">{t("prioritySystemDesc")}</p>
               </div>
               <div className="rounded-xl border border-white/20 bg-black/25 p-4 fade-rise">
                 <Gift className="w-5 h-5 text-amber-300 mb-2" />
-                <p className="font-semibold">Loyalty rewards</p>
-                <p className="text-sm text-zinc-200">Earn points and unlock discounts.</p>
+                <p className="font-semibold">{t("loyaltyRewards")}</p>
+                <p className="text-sm text-zinc-200">{t("loyaltyRewardsDesc")}</p>
               </div>
             </div>
           </div>
@@ -68,7 +68,7 @@ export default function Landing() {
         <div className="max-w-7xl mx-auto grid grid-cols-1 gap-6">
           <div className="rounded-2xl border border-zinc-200 bg-white p-6">
             <h2 className="text-2xl font-semibold mb-3">{t("team")}</h2>
-            <p className="text-zinc-600 mb-4">Tap a barber photo to start booking with them.</p>
+            <p className="text-zinc-600 mb-4">{t("teamTapPhoto")}</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {(barbers ?? []).filter((b) => b.role === "barber" && b.isAvailable !== false).map((barber) => (
                 <button

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { compare, hash } from "bcryptjs";
 import crypto from "crypto";
 import { sendAppointmentUpdateNotification, sendEmail, sendSms } from "./notifier";
+import { pool } from "./db";
 
 declare module "express-session" {
   interface SessionData {
@@ -17,11 +18,29 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  type AuditLogItem = {
+    id: number;
+    timestamp: string;
+    event: "api_call" | "login_success" | "login_failed" | "logout";
+    method: string;
+    path: string;
+    statusCode: number;
+    durationMs: number;
+    userId: number | null;
+    ip: string | null;
+    userAgent: string | null;
+    details?: Record<string, unknown>;
+  };
+  const auditLogs: AuditLogItem[] = [];
+  const maxAuditLogItems = 5000;
+  let auditSeq = 1;
+
   const loyaltyPointsPerCompletedVisit = 10;
   const minimumBarberLockMinutes = 120;
   const salonPhone = process.env.SALON_PHONE || "692057984";
   const salonAddress = process.env.SALON_ADDRESS || "Istanbul";
   const appBaseUrl = process.env.APP_BASE_URL || "http://localhost:5000";
+  const payseraTestBaseUrl = process.env.PAYSERA_TEST_CHECKOUT_URL || "https://sandbox.paysera.com/mock-checkout";
   const defaultGoogleClientId = "519299194836-q7bvbn0jlonm6u47crap9lfhcg6835m0.apps.googleusercontent.com";
 
   function getGoogleRedirectUri() {
@@ -45,11 +64,18 @@ export async function registerRoutes(
     });
 
     const verifyUrl = `${appBaseUrl}/auth?verifyToken=${token}`;
-    await sendEmail(
+    const emailResult = await sendEmail(
       email,
       "Verify your email",
       `Hi ${firstName}, verify your account by opening: ${verifyUrl}`,
     );
+    if (!emailResult.sent) {
+      console.warn("[auth.verify-email] failed", {
+        email,
+        provider: emailResult.provider,
+        error: emailResult.error,
+      });
+    }
   }
 
   function getSlotKey(date: Date) {
@@ -66,6 +92,11 @@ export async function registerRoutes(
     return phone.replace(/\D/g, "");
   }
 
+  function makePaymentReference(appointmentId: number): string {
+    const seed = crypto.randomBytes(4).toString("hex").toUpperCase();
+    return `PAYSERA-TEST-${appointmentId}-${seed}`;
+  }
+
   function parseNumericContent(content: string): number | null {
     const trimmed = content.trim();
     if (!/^[+-]?\d+$/.test(trimmed)) return null;
@@ -77,6 +108,50 @@ export async function registerRoutes(
     const numericUserId =
       typeof rawUserId === "number" ? rawUserId : Number.parseInt(String(rawUserId ?? ""), 10);
     return Number.isFinite(numericUserId) ? numericUserId : null;
+  }
+
+  function pushAuditLog(item: Omit<AuditLogItem, "id" | "timestamp">) {
+    const entry: AuditLogItem = {
+      id: auditSeq++,
+      timestamp: new Date().toISOString(),
+      ...item,
+    };
+    auditLogs.push(entry);
+    if (auditLogs.length > maxAuditLogItems) {
+      auditLogs.splice(0, auditLogs.length - maxAuditLogItems);
+    }
+  }
+
+  function extractRoutes(obj: unknown, out: { method: string; path: string }[] = []): { method: string; path: string }[] {
+    if (!obj || typeof obj !== "object") return out;
+    for (const value of Object.values(obj as Record<string, unknown>)) {
+      if (
+        value &&
+        typeof value === "object" &&
+        "method" in (value as Record<string, unknown>) &&
+        "path" in (value as Record<string, unknown>)
+      ) {
+        const route = value as { method?: string; path?: string };
+        if (route.method && route.path) out.push({ method: route.method, path: route.path });
+      } else {
+        extractRoutes(value, out);
+      }
+    }
+    return out;
+  }
+
+  async function requireAdmin(req: any, res: any) {
+    const userId = getSessionUserId(req.session?.userId);
+    if (!userId) {
+      res.status(401).json({ message: "Not logged in" });
+      return null;
+    }
+    const user = await storage.getUser(userId);
+    if (!user || user.role !== "admin") {
+      res.status(403).json({ message: "Admin only" });
+      return null;
+    }
+    return user;
   }
 
   async function seed() {
@@ -140,6 +215,10 @@ export async function registerRoutes(
           proposedDate: null,
           proposedByRole: null,
           proposedStatus: "none",
+          paymentMethod: "cash_on_arrival",
+          paymentStatus: "unpaid",
+          prepaidAmount: 0,
+          paymentReference: null,
           isDeleted: false,
         });
       }
@@ -148,6 +227,23 @@ export async function registerRoutes(
 
   seed().catch(console.error);
 
+  app.use("/api", (req, res, next) => {
+    const startedAt = Date.now();
+    res.on("finish", () => {
+      pushAuditLog({
+        event: "api_call",
+        method: req.method,
+        path: req.path,
+        statusCode: res.statusCode,
+        durationMs: Date.now() - startedAt,
+        userId: getSessionUserId(req.session?.userId),
+        ip: req.ip ?? null,
+        userAgent: typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"] : null,
+      });
+    });
+    next();
+  });
+
   app.post(api.auth.login.path, async (req, res) => {
     try {
       const { username, password } = api.auth.login.input.parse(req.body);
@@ -155,6 +251,17 @@ export async function registerRoutes(
       const normalizedPassword = password.trim();
       const user = await storage.getUserByUsername(normalizedUsername);
       if (!user) {
+        pushAuditLog({
+          event: "login_failed",
+          method: req.method,
+          path: req.path,
+          statusCode: 401,
+          durationMs: 0,
+          userId: null,
+          ip: req.ip ?? null,
+          userAgent: typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"] : null,
+          details: { username: normalizedUsername, reason: "user_not_found" },
+        });
         return res.status(401).json({ message: "Invalid credentials" });
       }
       if (user.role === "client" && user.authProvider === "google") {
@@ -170,9 +277,33 @@ export async function registerRoutes(
         ? await compare(normalizedPassword, storedPassword)
         : storedPassword === normalizedPassword;
 
-      if (!isValidPassword) return res.status(401).json({ message: "Invalid credentials" });
+      if (!isValidPassword) {
+        pushAuditLog({
+          event: "login_failed",
+          method: req.method,
+          path: req.path,
+          statusCode: 401,
+          durationMs: 0,
+          userId: user.id,
+          ip: req.ip ?? null,
+          userAgent: typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"] : null,
+          details: { username: normalizedUsername, reason: "invalid_password" },
+        });
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
 
       req.session.userId = user.id;
+      pushAuditLog({
+        event: "login_success",
+        method: req.method,
+        path: req.path,
+        statusCode: 200,
+        durationMs: 0,
+        userId: user.id,
+        ip: req.ip ?? null,
+        userAgent: typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"] : null,
+        details: { username: normalizedUsername, role: user.role },
+      });
       res.json(user);
     } catch (err: any) {
       console.error("[auth.login] failed", err);
@@ -236,8 +367,19 @@ export async function registerRoutes(
   });
 
   app.post(api.auth.logout.path, (req, res) => {
+    const userId = getSessionUserId(req.session.userId);
     req.session.destroy(() => {
       res.clearCookie("connect.sid");
+      pushAuditLog({
+        event: "logout",
+        method: "POST",
+        path: api.auth.logout.path,
+        statusCode: 200,
+        durationMs: 0,
+        userId,
+        ip: req.ip ?? null,
+        userAgent: typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"] : null,
+      });
       res.status(200).json({ message: "Logged out" });
     });
   });
@@ -573,6 +715,10 @@ export async function registerRoutes(
         proposedDate: null,
         proposedByRole: null,
         proposedStatus: "none",
+        paymentMethod: (input.paymentMethod as string | undefined) ?? "cash_on_arrival",
+        paymentStatus: (input.paymentStatus as string | undefined) ?? "unpaid",
+        prepaidAmount: Math.max(0, Math.floor(Number(input.prepaidAmount ?? 0))),
+        paymentReference: (input.paymentReference as string | undefined) ?? null,
         isDeleted: false,
       });
 
@@ -584,7 +730,8 @@ export async function registerRoutes(
 
       const bookedBranch = (await storage.getBranches()).find((b) => Number(b.id) === Number(input.branchId));
       const clientName = `${input.guestFirstName ?? clientUser?.firstName ?? ""} ${input.guestLastName ?? clientUser?.lastName ?? ""}`.trim() || "Client";
-      const toEmail = input.guestEmail ?? clientUser?.email ?? null;
+      const toEmailRaw = input.guestEmail ?? clientUser?.email ?? null;
+      const toEmail = typeof toEmailRaw === "string" ? toEmailRaw.trim() : null;
       const appointmentDate = new Date(input.appointmentDate);
       if (toEmail) {
         const appointmentDateText = appointmentDate.toLocaleDateString();
@@ -646,6 +793,57 @@ export async function registerRoutes(
         return res.status(400).json({ message: err.errors[0].message, field: err.errors[0].path.join(".") });
       }
       res.status(400).json({ message: "Bad Request" });
+    }
+  });
+
+  app.post(api.payments.payseraCreateSession.path, async (req, res) => {
+    try {
+      const { appointmentId, amount } = api.payments.payseraCreateSession.input.parse(req.body);
+      const appointment = await storage.getAppointment(appointmentId);
+      if (!appointment) return res.status(404).json({ message: "Appointment not found" });
+
+      const reference = appointment.paymentReference || makePaymentReference(appointment.id);
+      await storage.updateAppointment(appointment.id, {
+        paymentMethod: "paysera_test",
+        paymentStatus: "pending",
+        prepaidAmount: Math.max(0, Math.floor(amount)),
+        paymentReference: reference,
+      });
+
+      const checkoutUrl = `${payseraTestBaseUrl}?reference=${encodeURIComponent(reference)}&amount=${encodeURIComponent(String(Math.max(0, Math.floor(amount))))}&appointmentId=${appointment.id}`;
+      return res.json({ ok: true, checkoutUrl, reference, mode: "test" as const });
+    } catch {
+      return res.status(400).json({ message: "Bad Request" });
+    }
+  });
+
+  app.post(api.payments.payseraConfirm.path, async (req, res) => {
+    try {
+      const { appointmentId, reference } = api.payments.payseraConfirm.input.parse(req.body);
+      const appointment = await storage.getAppointment(appointmentId);
+      if (!appointment) return res.status(404).json({ message: "Appointment not found" });
+
+      if (appointment.paymentReference && appointment.paymentReference !== reference) {
+        return res.status(409).json({ message: "Payment reference mismatch" });
+      }
+
+      const updated = await storage.updateAppointment(appointment.id, {
+        paymentMethod: "paysera_test",
+        paymentStatus: "paid",
+        paymentReference: reference,
+      });
+
+      if (updated.clientId) {
+        await storage.createNotification({
+          userId: updated.clientId,
+          message: `Payment received in test mode for appointment #${updated.id}.`,
+          isRead: false,
+        });
+      }
+
+      return res.json({ ok: true, paymentStatus: updated.paymentStatus, appointmentId: updated.id });
+    } catch {
+      return res.status(400).json({ message: "Bad Request" });
     }
   });
 
@@ -777,12 +975,26 @@ export async function registerRoutes(
       const notifyPhone = appointment.guestPhone ?? appointmentBeforeUpdate?.guestPhone ?? appointmentClient?.phone ?? null;
 
       if (notifyPhone || notifyEmail) {
-        await sendAppointmentUpdateNotification({
+        const notifyResult = await sendAppointmentUpdateNotification({
           email: notifyEmail,
           phone: notifyPhone,
           subject: "Appointment status update",
           message: statusMessage,
         });
+        if (!notifyResult.email.sent && notifyEmail) {
+          console.warn("[appointments.updateStatus] email notification failed", {
+            email: notifyEmail,
+            provider: notifyResult.email.provider,
+            error: notifyResult.email.error,
+          });
+        }
+        if (!notifyResult.sms.sent && notifyPhone) {
+          console.warn("[appointments.updateStatus] sms notification failed", {
+            phone: notifyPhone,
+            provider: notifyResult.sms.provider,
+            error: notifyResult.sms.error,
+          });
+        }
       }
 
       res.json(appointment);
@@ -1009,6 +1221,255 @@ export async function registerRoutes(
       res.json({ ok: true });
     } catch {
       res.status(400).json({ message: "Bad Request" });
+    }
+  });
+
+  app.get(api.admin.usersList.path, async (req, res) => {
+    try {
+      const admin = await requireAdmin(req, res);
+      if (!admin) return;
+
+      const requestedType = String(req.query.type ?? "all").toLowerCase();
+      const allUsers = await storage.getUsers();
+      const allAppointments = await storage.getAppointments();
+
+      const appointmentCountByClientId = new Map<number, number>();
+      for (const appointment of allAppointments) {
+        if (!appointment.clientId) continue;
+        appointmentCountByClientId.set(
+          appointment.clientId,
+          (appointmentCountByClientId.get(appointment.clientId) ?? 0) + 1,
+        );
+      }
+
+      const filtered = allUsers.filter((u) => {
+        if (requestedType === "all") return true;
+        if (requestedType === "barber") return u.role === "barber";
+        if (requestedType === "client") return u.role === "client";
+        return true;
+      });
+
+      const users = filtered.map((u) => ({
+        id: u.id,
+        role: u.role,
+        username: u.username,
+        passwordHash: u.password,
+        authProvider: u.authProvider,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        phone: u.phone,
+        email: u.email,
+        emailVerified: u.emailVerified,
+        loyaltyPoints: u.loyaltyPoints,
+        branchId: u.branchId,
+        yearsOfExperience: u.yearsOfExperience,
+        bio: u.bio,
+        photoUrl: u.photoUrl,
+        isAvailable: u.isAvailable,
+        unavailableHours: u.unavailableHours,
+        reservationCount: appointmentCountByClientId.get(u.id) ?? 0,
+      }));
+
+      return res.json({
+        ok: true,
+        users,
+        note: "Stored passwords are hashed and cannot be reversed to plain text for existing users.",
+      });
+    } catch (error: any) {
+      console.error("[admin.usersList] failed", error);
+      return res.status(400).json({ message: "Bad Request" });
+    }
+  });
+
+  app.get(api.admin.developerSnapshot.path, async (req, res) => {
+    try {
+      const admin = await requireAdmin(req, res);
+      if (!admin) return;
+
+      let dbStatus: "up" | "down" = "up";
+      let dbLatencyMs = 0;
+      const dbStartedAt = Date.now();
+      try {
+        await pool.query("select 1 as ok");
+        dbLatencyMs = Date.now() - dbStartedAt;
+      } catch {
+        dbStatus = "down";
+        dbLatencyMs = Date.now() - dbStartedAt;
+      }
+
+      const users = await storage.getUsers();
+      const barbers = users.filter((u) => u.role === "barber").length;
+      const clients = users.filter((u) => u.role === "client").length;
+      const admins = users.filter((u) => u.role === "admin").length;
+      const appointmentItems = await storage.getAppointments();
+
+      const statusCounts = appointmentItems.reduce<Record<string, number>>((acc, item) => {
+        acc[item.status] = (acc[item.status] ?? 0) + 1;
+        return acc;
+      }, {});
+      const paymentCounts = appointmentItems.reduce<Record<string, number>>((acc, item) => {
+        acc[item.paymentStatus] = (acc[item.paymentStatus] ?? 0) + 1;
+        return acc;
+      }, {});
+
+      const routeTable = extractRoutes(api);
+      const uniqueRoutes = Array.from(new Map(routeTable.map((r) => [`${r.method} ${r.path}`, r])).values());
+
+      const recentApiCalls = auditLogs
+        .filter((l) => l.event === "api_call")
+        .slice(-250)
+        .reverse();
+      const loginHistory = auditLogs
+        .filter((l) => l.event === "login_success" || l.event === "login_failed" || l.event === "logout")
+        .slice(-250)
+        .reverse();
+      const recentReservations = appointmentItems
+        .slice()
+        .sort((a, b) => new Date(b.createdAt ?? b.appointmentDate).getTime() - new Date(a.createdAt ?? a.appointmentDate).getTime())
+        .slice(0, 200)
+        .map((a) => ({
+          id: a.id,
+          createdAt: a.createdAt,
+          appointmentDate: a.appointmentDate,
+          status: a.status,
+          paymentMethod: a.paymentMethod,
+          paymentStatus: a.paymentStatus,
+          prepaidAmount: a.prepaidAmount,
+          paymentReference: a.paymentReference,
+          guestFirstName: a.guestFirstName,
+          guestLastName: a.guestLastName,
+          guestPhone: a.guestPhone,
+          guestEmail: a.guestEmail,
+          clientId: a.clientId,
+          barberId: a.barberId,
+          serviceId: a.serviceId,
+          branchId: a.branchId,
+        }));
+
+      const vulnerabilities: string[] = [];
+      if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET === "change-this-session-secret") {
+        vulnerabilities.push("SESSION_SECRET is default or missing.");
+      }
+      if (!process.env.BREVO_API_KEY && !process.env.RESEND_API_KEY && !process.env.EMAILJS_SERVICE_ID && !process.env.VITE_EMAILJS_SERVICE_ID) {
+        vulnerabilities.push("No transactional email provider key configured.");
+      }
+      if (dbStatus === "down") {
+        vulnerabilities.push("Database health check failed.");
+      }
+
+      const securityChecks = [
+        process.env.NODE_ENV === "production",
+        Boolean(process.env.SESSION_SECRET && process.env.SESSION_SECRET !== "change-this-session-secret"),
+        dbStatus === "up",
+        Boolean(process.env.BREVO_API_KEY || process.env.RESEND_API_KEY || process.env.EMAILJS_SERVICE_ID || process.env.VITE_EMAILJS_SERVICE_ID),
+      ];
+      const securityScore = Math.round((securityChecks.filter(Boolean).length / securityChecks.length) * 100);
+
+      const snapshot = {
+        generatedAt: new Date().toISOString(),
+        generatedBy: { id: admin.id, username: admin.username, role: admin.role },
+        app: {
+          environment: process.env.NODE_ENV ?? "development",
+          uptimeSeconds: Math.floor(process.uptime()),
+          host: process.env.HOST ?? "0.0.0.0",
+          port: Number(process.env.PORT ?? 5000),
+          appBaseUrl: process.env.APP_BASE_URL ?? null,
+          trustProxy: true,
+        },
+        network: {
+          status: dbStatus === "up" ? "online" : "degraded",
+          domain: (() => {
+            try {
+              if (!process.env.APP_BASE_URL) return null;
+              return new URL(process.env.APP_BASE_URL).hostname;
+            } catch {
+              return null;
+            }
+          })(),
+          dbStatus,
+          dbLatencyMs,
+        },
+        authAndSecurity: {
+          mode: "session_cookie",
+          jwtEnabled: false,
+          firewall: "application-level checks only",
+          sessionSecretConfigured: Boolean(process.env.SESSION_SECRET && process.env.SESSION_SECRET !== "change-this-session-secret"),
+          securityScore,
+          vulnerabilities,
+        },
+        counts: {
+          users: users.length,
+          admins,
+          barbers,
+          clients,
+          appointments: appointmentItems.length,
+          statusCounts,
+          paymentCounts,
+          routes: uniqueRoutes.length,
+        },
+        routes: uniqueRoutes,
+        recentApiCalls,
+        loginHistory,
+        recentReservations,
+      };
+
+      return res.json({ ok: true, snapshot });
+    } catch (error: any) {
+      console.error("[admin.developerSnapshot] failed", error);
+      return res.status(400).json({ message: "Bad Request" });
+    }
+  });
+
+  app.get(api.admin.developerExport.path, async (req, res) => {
+    try {
+      const admin = await requireAdmin(req, res);
+      if (!admin) return;
+      let dbStatus: "up" | "down" = "up";
+      let dbLatencyMs = 0;
+      const dbStartedAt = Date.now();
+      try {
+        await pool.query("select 1 as ok");
+        dbLatencyMs = Date.now() - dbStartedAt;
+      } catch {
+        dbStatus = "down";
+        dbLatencyMs = Date.now() - dbStartedAt;
+      }
+
+      const users = await storage.getUsers();
+      const appointmentItems = await storage.getAppointments();
+      const routeTable = extractRoutes(api);
+      const uniqueRoutes = Array.from(new Map(routeTable.map((r) => [`${r.method} ${r.path}`, r])).values());
+      const vulnerabilities: string[] = [];
+      if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET === "change-this-session-secret") vulnerabilities.push("SESSION_SECRET is default or missing.");
+      if (dbStatus === "down") vulnerabilities.push("Database health check failed.");
+      const securityChecks = [
+        process.env.NODE_ENV === "production",
+        Boolean(process.env.SESSION_SECRET && process.env.SESSION_SECRET !== "change-this-session-secret"),
+        dbStatus === "up",
+      ];
+      const securityScore = Math.round((securityChecks.filter(Boolean).length / securityChecks.length) * 100);
+
+      const payload = {
+        ok: true,
+        snapshot: {
+          generatedAt: new Date().toISOString(),
+          generatedBy: { id: admin.id, username: admin.username, role: admin.role },
+          network: { dbStatus, dbLatencyMs, host: process.env.HOST ?? "0.0.0.0", appBaseUrl: process.env.APP_BASE_URL ?? null },
+          authAndSecurity: { mode: "session_cookie", jwtEnabled: false, securityScore, vulnerabilities },
+          counts: { users: users.length, appointments: appointmentItems.length, routes: uniqueRoutes.length },
+          routes: uniqueRoutes,
+          recentApiCalls: auditLogs.slice(-1000),
+          recentReservations: appointmentItems.slice(-1000),
+        },
+      };
+
+      const fileName = `developer-export-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+      return res.status(200).send(JSON.stringify(payload, null, 2));
+    } catch (error: any) {
+      console.error("[admin.developerExport] failed", error);
+      return res.status(400).json({ message: "Bad Request" });
     }
   });
 

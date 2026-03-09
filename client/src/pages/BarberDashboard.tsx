@@ -15,12 +15,14 @@ import { Input } from "@/components/ui/input";
 import { api } from "@shared/routes";
 import { usePublicSettings } from "@/hooks/use-settings";
 import { useTheme } from "@/hooks/use-theme";
+import { useI18n } from "@/i18n";
 
 export default function BarberDashboard() {
   const [, setLocation] = useLocation();
   const { user, logout, isLoading } = useAuth();
   const barberUser = user?.role === "barber" ? user : null;
   const { toast } = useToast();
+  const { t } = useI18n();
   const { themeMode, toggleTheme } = useTheme();
 
   const { data: allAppointments } = useAppointments();
@@ -34,6 +36,7 @@ export default function BarberDashboard() {
   const [activeGroupId, setActiveGroupId] = useState<number | null>(null);
   const [groupMessages, setGroupMessages] = useState<any[]>([]);
   const [groupMessageText, setGroupMessageText] = useState("");
+  const [tipByAppointment, setTipByAppointment] = useState<Record<number, string>>({});
   const { data: settings } = usePublicSettings();
   const [isAvailable, setIsAvailable] = useState<boolean>(barberUser?.isAvailable !== false);
   const [unavailableHours, setUnavailableHours] = useState<string[]>(() => {
@@ -440,13 +443,26 @@ export default function BarberDashboard() {
                       <Button
                         className="bg-slate-900 hover:bg-slate-800 text-white"
                         onClick={() => {
-                          const tipInput = window.prompt("Add tip amount (optional)", "0");
-                          const tip = Number(tipInput ?? "0");
+                          const tip = Number(tipByAppointment[apt.id] ?? "0");
                           void handleStatusChange(apt.id, "completed", { tipAmount: Number.isFinite(tip) ? Math.max(0, Math.floor(tip)) : 0 });
+                          setTipByAppointment((prev) => ({ ...prev, [apt.id]: "" }));
                         }}
                       >
-                        Mark Completed
+                        {t("completeWithTip")}
                       </Button>
+                      <div className={`tip-panel ${Number(tipByAppointment[apt.id] ?? "0") > 0 ? "tip-panel--active" : ""}`}>
+                        <label htmlFor={`tip-${apt.id}`} className="tip-panel__label">{t("addTipOptional")}</label>
+                        <Input
+                          id={`tip-${apt.id}`}
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={tipByAppointment[apt.id] ?? ""}
+                          onChange={(e) => setTipByAppointment((prev) => ({ ...prev, [apt.id]: e.target.value }))}
+                          placeholder="0"
+                          className="tip-panel__input"
+                        />
+                      </div>
                     </div>
                   </div>
                 ))}

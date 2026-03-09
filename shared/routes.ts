@@ -176,6 +176,39 @@ export const api = {
       responses: { 200: z.custom<typeof appointments.$inferSelect>() },
     },
   },
+  payments: {
+    payseraCreateSession: {
+      method: "POST" as const,
+      path: "/api/payments/paysera/create-session" as const,
+      input: z.object({
+        appointmentId: z.number(),
+        amount: z.number().nonnegative(),
+      }),
+      responses: {
+        200: z.object({
+          ok: z.boolean(),
+          checkoutUrl: z.string(),
+          reference: z.string(),
+          mode: z.literal("test"),
+        }),
+      },
+    },
+    payseraConfirm: {
+      method: "POST" as const,
+      path: "/api/payments/paysera/confirm" as const,
+      input: z.object({
+        appointmentId: z.number(),
+        reference: z.string().min(1),
+      }),
+      responses: {
+        200: z.object({
+          ok: z.boolean(),
+          paymentStatus: z.string(),
+          appointmentId: z.number(),
+        }),
+      },
+    },
+  },
   feedbacks: {
     list: {
       method: "GET" as const,
@@ -238,6 +271,34 @@ export const api = {
         wallQueueLimit: z.number().min(1).max(20).optional(),
       }),
       responses: { 200: z.object({ ok: z.boolean() }) },
+    },
+    usersList: {
+      method: "GET" as const,
+      path: "/api/admin/users" as const,
+      responses: {
+        200: z.object({
+          ok: z.boolean(),
+          users: z.array(z.any()),
+          note: z.string().optional(),
+        }),
+      },
+    },
+    developerSnapshot: {
+      method: "GET" as const,
+      path: "/api/admin/developer/snapshot" as const,
+      responses: {
+        200: z.object({
+          ok: z.boolean(),
+          snapshot: z.any(),
+        }),
+      },
+    },
+    developerExport: {
+      method: "GET" as const,
+      path: "/api/admin/developer/export" as const,
+      responses: {
+        200: z.any(),
+      },
     },
   },
   earnings: {
