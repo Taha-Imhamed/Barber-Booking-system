@@ -16,7 +16,7 @@ export default function Landing() {
   const [selectedBarberId, setSelectedBarberId] = useState<number | null>(null);
   const [confirmBarberId, setConfirmBarberId] = useState<number | null>(null);
   const [galleryBarberId, setGalleryBarberId] = useState<number | null>(null);
-  const [zoomedImage, setZoomedImage] = useState<{ src: string; title: string } | null>(null);
+  const [zoomedMedia, setZoomedMedia] = useState<{ src: string; title: string; type: "image" | "video" } | null>(null);
   const gallery = useBarberGallery(confirmBarberId ?? undefined);
   const clientGallery = useBarberGallery(galleryBarberId ?? undefined);
   const landingMedia = useLandingMedia();
@@ -116,9 +116,10 @@ export default function Landing() {
                     className="h-36 w-full rounded-md object-cover mb-2 cursor-zoom-in"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setZoomedImage({
+                      setZoomedMedia({
                         src: barber.photoUrl || "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=1200&q=90",
                         title: `${barber.firstName} ${barber.lastName}`,
+                        type: "image",
                       });
                     }}
                   />
@@ -156,7 +157,7 @@ export default function Landing() {
                     src={img.image_url || img.imageUrl}
                     alt={img.caption || "Gallery"}
                     className="h-28 w-full object-cover cursor-zoom-in"
-                    onClick={() => setZoomedImage({ src: img.image_url || img.imageUrl, title: img.caption || "Barber post" })}
+                    onClick={() => setZoomedMedia({ src: img.image_url || img.imageUrl, title: img.caption || "Barber post", type: "image" })}
                   />
                   <p className="text-xs px-2 py-1 text-zinc-600 dark:text-zinc-300 truncate">{img.caption || "Barber post"}</p>
                 </div>
@@ -171,14 +172,22 @@ export default function Landing() {
             <p className="text-sm text-zinc-600 dark:text-zinc-300 mb-3">Add before/after photos, team highlights, and shop vibes.</p>
             <div className="grid grid-cols-2 gap-2">
               {landingPhotoItems.map((p: any) => (
-                <div key={p.id} className="rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-700">
+                <button
+                  key={p.id}
+                  type="button"
+                  className="group relative overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-950 text-left"
+                  onClick={() => setZoomedMedia({ src: p.imageUrl, title: p.title || "Photo", type: "image" })}
+                >
                   <img
                     src={p.imageUrl}
                     alt={p.title || "Photo"}
-                    className="h-16 w-full object-cover cursor-zoom-in"
-                    onClick={() => setZoomedImage({ src: p.imageUrl, title: p.title || "Photo" })}
+                    className="h-28 w-full object-cover transition duration-300 group-hover:scale-105"
                   />
-                </div>
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-3 py-2">
+                    <p className="text-xs font-medium text-white truncate">{p.title || "Photo"}</p>
+                    <p className="text-[11px] text-zinc-200">Tap to enlarge</p>
+                  </div>
+                </button>
               ))}
               {landingPhotoItems.length === 0 ? (
                 <>
@@ -195,9 +204,25 @@ export default function Landing() {
             <p className="text-sm text-zinc-600 dark:text-zinc-300 mb-3">Reserve slots for reels, transformations, or tutorials.</p>
             <div className="grid md:grid-cols-3 gap-2">
               {landingVideoItems.map((v: any) => (
-                <div key={v.id} className="rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-700 bg-zinc-950">
-                  <video controls className="h-20 w-full object-cover" src={v.videoUrl} />
-                </div>
+                <button
+                  key={v.id}
+                  type="button"
+                  className="group relative overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-950 text-left"
+                  onClick={() => setZoomedMedia({ src: v.videoUrl, title: v.title || "Video", type: "video" })}
+                >
+                  <video
+                    className="h-44 w-full object-cover"
+                    src={v.videoUrl}
+                    muted
+                    playsInline
+                    preload="metadata"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent" />
+                  <div className="absolute inset-x-0 bottom-0 px-3 py-3">
+                    <p className="text-sm font-medium text-white truncate">{v.title || "Video"}</p>
+                    <p className="text-xs text-zinc-200">Tap to open</p>
+                  </div>
+                </button>
               ))}
               {landingVideoItems.length === 0 ? (
                 <>
@@ -250,7 +275,7 @@ export default function Landing() {
                     src={img.image_url || img.imageUrl}
                     alt={img.caption || "Portfolio"}
                     className="h-20 w-full rounded object-cover cursor-zoom-in"
-                    onClick={() => setZoomedImage({ src: img.image_url || img.imageUrl, title: img.caption || "Portfolio" })}
+                    onClick={() => setZoomedMedia({ src: img.image_url || img.imageUrl, title: img.caption || "Portfolio", type: "image" })}
                   />
                 ))}
                 {(!gallery.data || gallery.data.length === 0) ? <p className="text-xs text-zinc-500 dark:text-zinc-300 col-span-3">No gallery photos yet.</p> : null}
@@ -267,19 +292,29 @@ export default function Landing() {
           </div>
         </div>
       )}
-      {zoomedImage ? (
+      {zoomedMedia ? (
         <div
           className="fixed inset-0 z-[60] bg-black/85 p-4 md:p-8 flex items-center justify-center"
-          onClick={() => setZoomedImage(null)}
+          onClick={() => setZoomedMedia(null)}
         >
           <div className="w-full max-w-6xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-end mb-2">
-              <Button type="button" variant="outline" className="bg-white/90 hover:bg-white text-zinc-900" onClick={() => setZoomedImage(null)}>
+              <Button type="button" variant="outline" className="bg-white/90 hover:bg-white text-zinc-900" onClick={() => setZoomedMedia(null)}>
                 Close
               </Button>
             </div>
-            <img src={zoomedImage.src} alt={zoomedImage.title} className="w-full max-h-[82vh] object-contain rounded-xl border border-white/20 bg-black" />
-            {zoomedImage.title ? <p className="mt-2 text-center text-sm text-zinc-200">{zoomedImage.title}</p> : null}
+            {zoomedMedia.type === "video" ? (
+              <video
+                src={zoomedMedia.src}
+                controls
+                autoPlay
+                playsInline
+                className="w-full max-h-[82vh] rounded-xl border border-white/20 bg-black"
+              />
+            ) : (
+              <img src={zoomedMedia.src} alt={zoomedMedia.title} className="w-full max-h-[82vh] object-contain rounded-xl border border-white/20 bg-black" />
+            )}
+            {zoomedMedia.title ? <p className="mt-2 text-center text-sm text-zinc-200">{zoomedMedia.title}</p> : null}
           </div>
         </div>
       ) : null}
