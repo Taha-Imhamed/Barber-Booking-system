@@ -40,12 +40,32 @@ export async function registerRoutes(
   const minimumBarberLockMinutes = 120;
   const salonPhone = process.env.SALON_PHONE || "692057984";
   const salonAddress = process.env.SALON_ADDRESS || "Istanbul";
-  const appBaseUrl = process.env.APP_BASE_URL || "http://localhost:5000";
+  const configuredAppBaseUrl = process.env.APP_BASE_URL?.replace(/\/$/, "") || "";
+  const configuredApiBaseUrl = process.env.API_BASE_URL?.replace(/\/$/, "") || "";
   const payseraTestBaseUrl = process.env.PAYSERA_TEST_CHECKOUT_URL || "https://sandbox.paysera.com/mock-checkout";
   const defaultGoogleClientId = "519299194836-q7bvbn0jlonm6u47crap9lfhcg6835m0.apps.googleusercontent.com";
 
-  function getGoogleRedirectUri() {
-    return process.env.GOOGLE_REDIRECT_URI || `${appBaseUrl}${api.auth.googleCallback.path}`;
+  function getRequestOrigin(req?: Express.Request) {
+    const forwardedProtoHeader = req?.headers["x-forwarded-proto"];
+    const forwardedHostHeader = req?.headers["x-forwarded-host"];
+    const forwardedProto = Array.isArray(forwardedProtoHeader) ? forwardedProtoHeader[0] : String(forwardedProtoHeader ?? "").split(",")[0];
+    const forwardedHost = Array.isArray(forwardedHostHeader) ? forwardedHostHeader[0] : String(forwardedHostHeader ?? "").split(",")[0];
+    const protocol = forwardedProto || req?.protocol || "https";
+    const host = forwardedHost || req?.get("host") || process.env.VERCEL_URL || "";
+    if (host) return `${protocol}://${host.replace(/\/$/, "")}`;
+    return "http://localhost:5000";
+  }
+
+  function getPublicAppBaseUrl(req?: Express.Request) {
+    return getRequestOrigin(req) || configuredAppBaseUrl || "http://localhost:5000";
+  }
+
+  function getPublicApiBaseUrl(req?: Express.Request) {
+    return configuredApiBaseUrl || getRequestOrigin(req) || configuredAppBaseUrl || "http://localhost:5000";
+  }
+
+  function getGoogleRedirectUri(req?: Express.Request) {
+    return process.env.GOOGLE_REDIRECT_URI || `${getPublicApiBaseUrl(req)}${api.auth.googleCallback.path}`;
   }
 
   function getGoogleClientId() {
@@ -56,7 +76,7 @@ export async function registerRoutes(
     return process.env.GOOGLE_CLIENT_SECRET || process.env.GOOGLE_OAUTH_CLIENT_SECRET || "";
   }
 
-  async function createAndSendVerificationEmail(userId: number, email: string, firstName: string) {
+  async function createAndSendVerificationEmail(req: Express.Request, userId: number, email: string, firstName: string) {
     const token = crypto.randomBytes(32).toString("hex");
     await storage.createEmailVerificationToken({
       userId,
@@ -64,7 +84,7 @@ export async function registerRoutes(
       expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
     });
 
-    const verifyUrl = `${appBaseUrl}/auth?verifyToken=${token}`;
+    const verifyUrl = `${getPublicAppBaseUrl(req)}/auth?verifyToken=${token}`;
     const emailResult = await sendEmail(
       email,
       "Verify your email",
@@ -404,7 +424,7 @@ export async function registerRoutes(
         adminPermissions: "[]",
       });
       if (user.email && !user.emailVerified) {
-        await createAndSendVerificationEmail(user.id, user.email, user.firstName);
+        await createAndSendVerificationEmail(req, user.id, user.email, user.firstName);
       }
       req.session.userId = user.id;
       res.status(201).json(user);
@@ -455,7 +475,7 @@ export async function registerRoutes(
       return res.status(501).json({ message: "Google auth is not configured." });
     }
 
-    const redirectUri = getGoogleRedirectUri();
+    const redirectUri = getGoogleRedirectUri(_req);
     const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
     url.searchParams.set("client_id", clientId);
     url.searchParams.set("redirect_uri", redirectUri);
@@ -484,7 +504,7 @@ export async function registerRoutes(
           code,
           client_id: clientId,
           client_secret: clientSecret,
-          redirect_uri: getGoogleRedirectUri(),
+          redirect_uri: getGoogleRedirectUri(req),
           grant_type: "authorization_code",
         }).toString(),
       });
@@ -542,7 +562,7 @@ export async function registerRoutes(
       }
 
       req.session.userId = user.id;
-      res.redirect("/?auth=google_success");
+      res.redirect(`${getPublicAppBaseUrl(req)}/?auth=google_success`);
     } catch {
       res.status(400).json({ message: "Google sign-in failed." });
     }
@@ -576,7 +596,7 @@ export async function registerRoutes(
         return res.status(200).json({ ok: true, message: "If the email exists, a verification link was sent." });
       }
       if (user.emailVerified) return res.status(200).json({ ok: true, message: "Email is already verified." });
-      await createAndSendVerificationEmail(user.id, user.email, user.firstName);
+      await createAndSendVerificationEmail(req, user.id, user.email, user.firstName);
       return res.status(200).json({ ok: true, message: "Verification email sent." });
     } catch {
       return res.status(400).json({ ok: false, message: "Bad Request" });

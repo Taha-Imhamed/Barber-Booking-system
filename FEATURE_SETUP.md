@@ -30,6 +30,8 @@ Add these in `.env`:
 DATABASE_URL=postgres://...
 SESSION_SECRET=replace_me
 APP_BASE_URL=http://localhost:5000
+# optional when backend is hosted on a different domain than the frontend
+# API_BASE_URL=https://your-backend.onrender.com
 ```
 
 ## 3. Google sign-in setup
@@ -38,6 +40,7 @@ In Google Cloud Console:
 1. Create OAuth 2.0 Web Client.
 2. Add redirect URI:
    - `http://localhost:5000/api/auth/google/callback`
+   - Production example: `https://your-vercel-app.vercel.app/api/auth/google/callback`
 3. Put credentials in `.env`:
 
 ```env
@@ -46,6 +49,16 @@ GOOGLE_CLIENT_SECRET=...
 # optional override:
 # GOOGLE_REDIRECT_URI=http://localhost:5000/api/auth/google/callback
 ```
+
+For Vercel + Render deployments:
+- Set `APP_BASE_URL` to your Vercel frontend URL, for example `https://your-vercel-app.vercel.app`
+- Set `API_BASE_URL` only if Google should call the backend directly instead of going through Vercel rewrites
+- Make sure the same production callback URL is added in Google Cloud Console
+
+## 3b. Apple and Facebook sign-in
+
+Apple and Facebook OAuth are not implemented on the server in this project yet.
+The auth page now shows their icons, but the buttons are intentionally disabled until those backend flows are added.
 
 ## 4. Email verification + email notifications
 
@@ -113,4 +126,3 @@ npm run db:push
 ```
 
 before starting the app.
-
