@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useAnalyticsDashboard, useInventory, useReviewsAdmin, useTagsCampaigns } from "@/hooks/use-advanced";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { formatLek } from "@/lib/money";
 
 export default function AdminAdvancedModules() {
   const { toast } = useToast();
@@ -45,7 +46,7 @@ export default function AdminAdvancedModules() {
             </div>
             <div className="rounded-lg border p-3">
               <p className="text-xs text-zinc-500">Monthly Revenue</p>
-              <p className="font-semibold">${analytics?.monthlyRevenue ?? 0}</p>
+              <p className="font-semibold">{formatLek(Number(analytics?.monthlyRevenue ?? 0))}</p>
             </div>
           </div>
 
@@ -112,7 +113,7 @@ export default function AdminAdvancedModules() {
               <div key={item.id} className="border rounded-lg p-3 flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="font-medium">{item.product_name}</p>
-                  <p className="text-xs text-zinc-500">Stock: {item.stock_quantity} | Price: ${item.price}</p>
+                  <p className="text-xs text-zinc-500">Stock: {item.stock_quantity} | Price: {formatLek(Number(item.price))}</p>
                 </div>
                 <Button
                   variant="outline"

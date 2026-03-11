@@ -72,7 +72,7 @@ const dictionary: Dictionary = {
   prioritySystemDesc: { en: "Registered users are prioritized.", tr: "Kayitli kullanicilar oncelik alir.", sq: "Perdoruesit e regjistruar kane perparesi." },
   loyaltyRewards: { en: "Loyalty rewards", tr: "Sadakat odulleri", sq: "Shperblime besnikerie" },
   loyaltyRewardsDesc: { en: "Earn points and unlock discounts.", tr: "Puan kazanin ve indirim acin.", sq: "Fitoni pike dhe zhbllokoni zbritje." },
-  teamTapPhoto: { en: "Tap a barber photo to start booking with them.", tr: "Onlarla rezervasyon baslatmak icin berber fotosuna dokunun.", sq: "Prekni foton e berberit per te nisur rezervimin me te." },
+  teamTapPhoto: { en: "Tap a barber photo to open their Instagram.", tr: "Berberin Instagramini acmak icin fotosuna dokunun.", sq: "Prekni foton e berberit per te hapur Instagramin e tij." },
   authSignInTitle: { en: "Istanbul Salon Sign In", tr: "Istanbul Salon Giris", sq: "Hyrje Istanbul Salon" },
   authCreateAccount: { en: "Create Account", tr: "Hesap Olustur", sq: "Krijo Llogari" },
   authManageReservations: { en: "Manage your reservations and points", tr: "Rezervasyonlarinizi ve puanlarinizi yonetin", sq: "Menaxhoni rezervimet dhe piket tuaja" },

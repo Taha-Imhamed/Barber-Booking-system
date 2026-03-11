@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { playNotificationTone } from "@/lib/playNotificationTone";
 import { useUpdateBarber } from "@/hooks/use-barbers";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { api } from "@shared/routes";
 import { usePublicSettings } from "@/hooks/use-settings";
 import { useTheme } from "@/hooks/use-theme";
@@ -19,6 +20,7 @@ import { useI18n } from "@/i18n";
 import AppointmentCalendar from "@/components/AppointmentCalendar";
 import { useAddGalleryItem, useBarberGallery, useDeleteGalleryItem, useUpdateGalleryItem } from "@/hooks/use-advanced";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { normalizeInstagramUrl } from "@/lib/instagram";
 
 export default function BarberDashboard() {
   const [, setLocation] = useLocation();
@@ -52,6 +54,7 @@ export default function BarberDashboard() {
   const [captionDraftById, setCaptionDraftById] = useState<Record<number, string>>({});
   const [replaceFileById, setReplaceFileById] = useState<Record<number, File | null>>({});
   const [isAvailable, setIsAvailable] = useState<boolean>(barberUser?.isAvailable !== false);
+  const [instagramUrl, setInstagramUrl] = useState<string>(barberUser?.instagramUrl ?? "");
   const [unavailableHours, setUnavailableHours] = useState<string[]>(() => {
     try {
       const parsed = JSON.parse(barberUser?.unavailableHours ?? "[]");
@@ -107,7 +110,8 @@ export default function BarberDashboard() {
     } catch {
       setUnavailableHours([]);
     }
-  }, [barberUser?.id, barberUser?.isAvailable, barberUser?.unavailableHours]);
+    setInstagramUrl(barberUser.instagramUrl ?? "");
+  }, [barberUser?.id, barberUser?.isAvailable, barberUser?.unavailableHours, barberUser?.instagramUrl]);
 
   const handleStatusChange = async (id: number, status: string, options?: { proposedDate?: string; tipAmount?: number }) => {
     try {
@@ -158,6 +162,20 @@ export default function BarberDashboard() {
       toast({ title: "Availability updated" });
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message || "Failed to save availability." });
+    }
+  };
+
+  const handleSaveInstagram = async () => {
+    if (!barberUser) return;
+    try {
+      const normalized = normalizeInstagramUrl(instagramUrl);
+      await updateBarber.mutateAsync({
+        id: barberUser.id,
+        data: { instagramUrl: normalized ?? null },
+      });
+      toast({ title: "Instagram link updated" });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message || "Failed to save Instagram link." });
     }
   };
 
@@ -388,24 +406,38 @@ export default function BarberDashboard() {
         <header className="mb-8 space-y-4">
           <h1 className="text-3xl font-semibold mb-2">Welcome back, {barberUser.firstName}</h1>
           <p className="text-slate-600">Monitor your queue and complete your timetable.</p>
-          <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-4">
-            <img
-              src={barberUser.photoUrl || "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=200&q=80"}
-              alt="Barber profile"
-              className="w-20 h-20 rounded-full object-cover border border-slate-300"
-            />
-            <div>
-              <p className="text-sm font-medium mb-1">Upload your photo from your device</p>
-              <Input
-                type="file"
-                accept="image/*"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) void handlePhotoUpload(file);
-                }}
+            <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-4">
+              <img
+                src={barberUser.photoUrl || "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=200&q=80"}
+                alt="Barber profile"
+                className="w-20 h-20 rounded-full object-cover border border-slate-300"
               />
+              <div>
+                <p className="text-sm font-medium mb-1">Upload your photo from your device</p>
+                <Input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) void handlePhotoUpload(file);
+                  }}
+                />
+              </div>
             </div>
-          </div>
+            <div className="mt-4 max-w-xl">
+              <Label className="text-sm text-slate-700">Instagram link</Label>
+              <div className="mt-2 flex flex-col sm:flex-row gap-2">
+                <Input
+                  value={instagramUrl}
+                  onChange={(e) => setInstagramUrl(e.target.value)}
+                  placeholder="https://instagram.com/yourname or @yourname"
+                />
+                <Button type="button" onClick={handleSaveInstagram} disabled={updateBarber.isPending}>
+                  {updateBarber.isPending ? "Saving..." : "Save Instagram"}
+                </Button>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">Clients can open this when they tap your photo.</p>
+            </div>
           {view === "gallery" && (
           <div className="mt-4 rounded-xl border border-slate-200 p-4 bg-white">
             <p className="font-semibold mb-2">Portfolio / Gallery Posts</p>

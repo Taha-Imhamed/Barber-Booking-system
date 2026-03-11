@@ -27,6 +27,7 @@ create table if not exists users (
   years_of_experience integer,
   bio text,
   photo_url text,
+  instagram_url text,
   created_at timestamptz not null default now()
 );
 

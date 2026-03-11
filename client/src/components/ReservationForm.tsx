@@ -16,6 +16,7 @@ import { useServices } from "@/hooks/use-services";
 import { useBarbers } from "@/hooks/use-barbers";
 import { useAppointments, useCreateAppointment } from "@/hooks/use-appointments";
 import { cn } from "@/lib/utils";
+import { formatLek } from "@/lib/money";
 import { useI18n } from "@/i18n";
 import { api } from "@shared/routes";
 import { useNearestBranch } from "@/hooks/use-advanced";
@@ -354,7 +355,7 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
                   <SelectContent>
                     {services?.map((service) => (
                       <SelectItem key={service.id} value={service.id.toString()}>
-                        {service.name} - ${service.price} ({service.durationMinutes}m)
+                        {service.name} - {formatLek(service.price)} ({service.durationMinutes}m)
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -363,7 +364,7 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
                   <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/60 p-3 space-y-3">
                     <div className="rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2">
                       <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                        {selectedService?.name ?? "Selected service"} - ${selectedService?.price ?? 0} ({selectedService?.durationMinutes ?? 0}m)
+                        {selectedService?.name ?? "Selected service"} - {formatLek(Number(selectedService?.price ?? 0))} ({selectedService?.durationMinutes ?? 0}m)
                       </p>
                     </div>
 
@@ -381,7 +382,7 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
                                   : "border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800"
                               }`}
                             >
-                              <span>{service.name} (${service.price}, {service.durationMinutes}m)</span>
+                              <span>{service.name} ({formatLek(service.price)}, {service.durationMinutes}m)</span>
                               <input
                                 type="checkbox"
                                 checked={checked}
@@ -401,7 +402,7 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
                     </div>
 
                     <div className="rounded-lg border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/30 px-3 py-2">
-                      <p className="text-sm font-semibold text-emerald-800">Total: ${totalPrice} / {totalDuration} min</p>
+                      <p className="text-sm font-semibold text-emerald-800">Total: {formatLek(totalPrice)} / {totalDuration} min</p>
                     </div>
                   </div>
                 )}
@@ -570,14 +571,14 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
                 {formData.paymentMethod === "paysera_test" && (
                    <p className="text-sm text-zinc-600 dark:text-zinc-300 flex items-center gap-2">
                     <BadgeCheck className="w-4 h-4 text-emerald-600" />
-                    Advance amount: ${Number(totalPrice ?? 0)}
+                    Advance amount: {formatLek(Number(totalPrice ?? 0))}
                   </p>
                 )}
               </div>
 
               {cancellationPolicy ? (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-                  Cancellation policy: free up to {cancellationPolicy.freeCancelHours}h before appointment. Late cancellation fee: ${cancellationPolicy.lateFee}.
+                  Cancellation policy: free up to {cancellationPolicy.freeCancelHours}h before appointment. Late cancellation fee: {formatLek(cancellationPolicy.lateFee)}.
                 </div>
               ) : null}
 

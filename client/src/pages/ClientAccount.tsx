@@ -16,6 +16,7 @@ import { useNotifications, useMarkAllNotificationsRead, useMarkNotificationRead 
 import { useApplyReferral, useReferralCode } from "@/hooks/use-advanced";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@shared/routes";
+import { formatLekFromCents } from "@/lib/money";
 
 export default function ClientAccount() {
   const [, setLocation] = useLocation();
@@ -82,7 +83,7 @@ export default function ClientAccount() {
             <CardHeader className="pb-2"><CardTitle className="text-sm text-zinc-500 flex items-center gap-2"><Gem className="w-4 h-4" /> Loyalty Points</CardTitle></CardHeader>
             <CardContent>
               <p className="text-3xl font-semibold">{user.loyaltyPoints ?? 0}</p>
-              <p className="text-xs text-zinc-500 mt-1">Credits: ${(Number(user.bookingCreditCents ?? 0) / 100).toFixed(2)}</p>
+              <p className="text-xs text-zinc-500 mt-1">Credits: {formatLekFromCents(Number(user.bookingCreditCents ?? 0))}</p>
               {user.isFlaggedNoShow ? <p className="text-xs text-red-600 mt-1">Warning: account flagged for repeated no-shows.</p> : null}
             </CardContent>
           </Card>

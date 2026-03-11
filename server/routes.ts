@@ -265,6 +265,7 @@ export async function registerRoutes(
         yearsOfExperience: null,
         bio: "Main system administrator",
         photoUrl: null,
+        instagramUrl: null,
         isAvailable: true,
         unavailableHours: "[]",
         adminPermissions: "[]",
@@ -419,6 +420,7 @@ export async function registerRoutes(
         yearsOfExperience: input.yearsOfExperience ?? null,
         bio: input.bio ?? null,
         photoUrl: input.photoUrl ?? null,
+        instagramUrl: input.instagramUrl ?? null,
         isAvailable: true,
         unavailableHours: "[]",
         adminPermissions: "[]",
@@ -545,6 +547,7 @@ export async function registerRoutes(
           yearsOfExperience: null,
           bio: null,
           photoUrl: profile.picture ?? null,
+          instagramUrl: null,
           isAvailable: true,
           unavailableHours: "[]",
           adminPermissions: "[]",
@@ -693,6 +696,7 @@ export async function registerRoutes(
         yearsOfExperience: input.yearsOfExperience ?? null,
         bio: input.bio ?? null,
         photoUrl: input.photoUrl ?? null,
+        instagramUrl: input.instagramUrl ?? null,
         isAvailable: true,
         unavailableHours: "[]",
         adminPermissions: "[]",
@@ -704,16 +708,33 @@ export async function registerRoutes(
   });
 
   app.patch(api.barbers.update.path, async (req, res) => {
-    const admin = await requireAdminPermission(req, res, "barbers");
-    if (!admin) return;
     try {
       const id = Number.parseInt(req.params.id, 10);
+      const sessionUserId = getSessionUserId(req.session.userId);
+      if (!sessionUserId) return res.status(401).json({ message: "Not logged in" });
+      const actor = await storage.getUser(sessionUserId);
+      if (!actor) return res.status(401).json({ message: "Not logged in" });
       const input = api.barbers.update.input.parse(req.body);
-      const nextInput = { ...input } as any;
-      if (typeof nextInput.password === "string" && nextInput.password.trim().length > 0) {
-        nextInput.password = await hash(nextInput.password.trim(), 10);
+      const isAdmin = actor.role === "admin" && hasAdminPermission(actor, "barbers");
+      const isSelfBarber = actor.role === "barber" && Number(actor.id) === Number(id);
+
+      if (!isAdmin && !isSelfBarber) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      let nextInput = { ...input } as any;
+      if (isSelfBarber) {
+        const allowed = new Set(["photoUrl", "isAvailable", "unavailableHours", "instagramUrl"]);
+        nextInput = Object.fromEntries(Object.entries(nextInput).filter(([key]) => allowed.has(key)));
       } else {
-        delete nextInput.password;
+        if (typeof nextInput.password === "string" && nextInput.password.trim().length > 0) {
+          nextInput.password = await hash(nextInput.password.trim(), 10);
+        } else {
+          delete nextInput.password;
+        }
+      }
+      if (Object.keys(nextInput).length === 0) {
+        return res.status(400).json({ message: "No valid fields to update." });
       }
       const barber = await storage.updateUser(id, nextInput);
       res.json(barber);
@@ -1033,7 +1054,7 @@ export async function registerRoutes(
         const hoursToAppointment = (new Date(appointmentBeforeUpdate.appointmentDate).getTime() - Date.now()) / (1000 * 60 * 60);
         if (hoursToAppointment < freeCancelHours) {
           return res.status(400).json({
-            message: `Late cancellation fee applies: ${lateFee}. Free cancellation is allowed up to ${freeCancelHours} hours.`,
+            message: `Late cancellation fee applies: Lek ${lateFee}. Free cancellation is allowed up to ${freeCancelHours} hours.`,
           });
         }
       }
@@ -1221,7 +1242,7 @@ export async function registerRoutes(
           const fallbackServiceName = service?.name ?? String(appointment.serviceId);
           const servicesSummary =
             normalizedServiceRows.length > 0
-              ? normalizedServiceRows.map((r) => `${r.name} ($${r.price}, ${r.durationMinutes}m)`).join(", ")
+              ? normalizedServiceRows.map((r) => `${r.name} (Lek ${r.price}, ${r.durationMinutes}m)`).join(", ")
               : fallbackServiceName;
           const computedTotalPrice =
             appointment.totalPrice != null
@@ -1254,7 +1275,7 @@ export async function registerRoutes(
             `Date: ${dateText}`,
             `Time: ${timeText}`,
             `Total Duration: ${computedTotalDuration} min`,
-            `Total Price: $${computedTotalPrice}`,
+            `Total Price: Lek ${computedTotalPrice}`,
             "",
             "We look forward to seeing you.",
             "",
@@ -1579,6 +1600,7 @@ export async function registerRoutes(
         yearsOfExperience: u.yearsOfExperience,
         bio: u.bio,
         photoUrl: u.photoUrl,
+        instagramUrl: u.instagramUrl,
         isAvailable: u.isAvailable,
         unavailableHours: u.unavailableHours,
         adminPermissions: u.adminPermissions,
@@ -1622,6 +1644,7 @@ export async function registerRoutes(
         yearsOfExperience: null,
         bio: "Sub-admin account",
         photoUrl: null,
+        instagramUrl: null,
         isAvailable: true,
         unavailableHours: "[]",
         adminPermissions: JSON.stringify(permissions),

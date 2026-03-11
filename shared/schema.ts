@@ -27,6 +27,7 @@ export const users = pgTable("users", {
   yearsOfExperience: integer("years_of_experience"),
   bio: text("bio"),
   photoUrl: text("photo_url"),
+  instagramUrl: text("instagram_url"),
   isAvailable: boolean("is_available").default(true),
   unavailableHours: text("unavailable_hours").default("[]"),
   noShowCount: integer("no_show_count").default(0),

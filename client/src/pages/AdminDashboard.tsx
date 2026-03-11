@@ -28,6 +28,7 @@ import { useTheme } from "@/hooks/use-theme";
 import AppointmentCalendar from "@/components/AppointmentCalendar";
 import AdminAdvancedModules from "@/components/AdminAdvancedModules";
 import { useLandingMedia, useSaveLandingMedia } from "@/hooks/use-advanced";
+import { formatLek } from "@/lib/money";
 
 type AdminTab =
   | "appointments"
@@ -1395,10 +1396,10 @@ export default function AdminDashboard() {
 
           <TabsContent value="finance" className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Total Profit (Today)</CardTitle></CardHeader><CardContent><p className="text-2xl font-semibold">${earnings?.totalProfit ?? 0}</p></CardContent></Card>
-              <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Expenses (Today)</CardTitle></CardHeader><CardContent><p className="text-2xl font-semibold">${earnings?.totalExpenses ?? 0}</p></CardContent></Card>
-              <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Net Profit</CardTitle></CardHeader><CardContent><p className="text-2xl font-semibold">${earnings?.netProfit ?? 0}</p></CardContent></Card>
-              <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Branch Daily</CardTitle></CardHeader><CardContent><p className="text-2xl font-semibold">${earnings?.branchDailyTotal ?? 0}</p></CardContent></Card>
+              <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Total Profit (Today)</CardTitle></CardHeader><CardContent><p className="text-2xl font-semibold">{formatLek(Number(earnings?.totalProfit ?? 0))}</p></CardContent></Card>
+              <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Expenses (Today)</CardTitle></CardHeader><CardContent><p className="text-2xl font-semibold">{formatLek(Number(earnings?.totalExpenses ?? 0))}</p></CardContent></Card>
+              <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Net Profit</CardTitle></CardHeader><CardContent><p className="text-2xl font-semibold">{formatLek(Number(earnings?.netProfit ?? 0))}</p></CardContent></Card>
+              <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Branch Daily</CardTitle></CardHeader><CardContent><p className="text-2xl font-semibold">{formatLek(Number(earnings?.branchDailyTotal ?? 0))}</p></CardContent></Card>
             </div>
             <div className="bg-white border rounded-xl p-5 space-y-3">
               <h3 className="text-lg font-semibold">Add Expense</h3>
@@ -1452,7 +1453,7 @@ export default function AdminDashboard() {
                             {isEditing ? (
                               <Input type="number" value={editingExpenseAmount} onChange={(e) => setEditingExpenseAmount(e.target.value)} />
                             ) : (
-                              `$${item.amount}`
+                              formatLek(Number(item.amount))
                             )}
                           </TableCell>
                           <TableCell>{item.createdAt ? format(new Date(item.createdAt), "PPP p") : "-"}</TableCell>
@@ -1552,7 +1553,7 @@ export default function AdminDashboard() {
                 <div className="space-y-2">
                   {(earnings?.branchTotals ?? []).map((b) => (
                     <div key={b.branchId} className="flex items-center justify-between border rounded p-2">
-                      <span>{b.branchName}</span><strong>${b.total}</strong>
+                      <span>{b.branchName}</span><strong>{formatLek(Number(b.total))}</strong>
                     </div>
                   ))}
                 </div>
@@ -1562,7 +1563,7 @@ export default function AdminDashboard() {
                 <div className="space-y-2">
                   {(earnings?.barberTotals ?? []).map((b) => (
                     <div key={b.barberId} className="flex items-center justify-between border rounded p-2">
-                      <span>{b.barberName}</span><strong>${b.total}</strong>
+                      <span>{b.barberName}</span><strong>{formatLek(Number(b.total))}</strong>
                     </div>
                   ))}
                 </div>
@@ -2004,7 +2005,7 @@ export default function AdminDashboard() {
                 <Card key={service.id} className="bg-white border-amber-100">
                   <CardHeader>
                     <CardTitle>{service.name}</CardTitle>
-                    <p className="text-2xl font-semibold">${service.price}</p>
+                    <p className="text-2xl font-semibold">{formatLek(Number(service.price))}</p>
                     <p className="text-sm text-zinc-500">{service.durationMinutes} mins</p>
                     <Button size="sm" variant="outline" className="mt-2" onClick={() => setEditingService(service)}>
                       <Pencil className="w-3 h-3 mr-2" /> Edit

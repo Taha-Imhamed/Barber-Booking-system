@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import { useBarberGallery, useLandingMedia } from "@/hooks/use-advanced";
+import { normalizeInstagramUrl } from "@/lib/instagram";
 
 const HERO_BG =
   "https://static.vecteezy.com/ti/photos-gratuite/t2/65578350-cette-bien-equipe-salon-de-coiffure-caracteristiques-une-tondeuse-en-train-de-preparer-pour-barbe-toilettage-seances-photo.jpg";
@@ -42,6 +43,12 @@ export default function Landing() {
         .filter((v: any) => v.videoUrl.trim().length > 0),
     [landingMedia.data?.videos],
   );
+
+  const openInstagram = (rawUrl?: string | null) => {
+    const url = normalizeInstagramUrl(rawUrl);
+    if (!url) return;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
   const availableBarbers = useMemo(() => (barbers ?? []).filter((b) => b.role === "barber" && b.isAvailable !== false), [barbers]);
   const barberById = useMemo(() => new Map((barbers ?? []).map((b) => [Number(b.id), b])), [barbers]);
   useEffect(() => {
@@ -103,30 +110,34 @@ export default function Landing() {
             <h2 className="text-2xl font-semibold mb-3">{t("team")}</h2>
             <p className="text-zinc-600 dark:text-zinc-300 mb-4">{t("teamTapPhoto")}</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {availableBarbers.map((barber) => (
-                <button
-                  key={barber.id}
-                  type="button"
-                  onClick={() => setConfirmBarberId(barber.id)}
-                  className="group rounded-lg border border-zinc-200 dark:border-zinc-700 p-3 bg-zinc-50 dark:bg-zinc-800/70 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
-                >
-                  <img
-                    src={barber.photoUrl || "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=400&q=80"}
-                    alt={`${barber.firstName} ${barber.lastName}`}
-                    className="h-36 w-full rounded-md object-cover mb-2 cursor-zoom-in"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setZoomedMedia({
-                        src: barber.photoUrl || "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=1200&q=90",
-                        title: `${barber.firstName} ${barber.lastName}`,
-                        type: "image",
-                      });
-                    }}
-                  />
-                  <p className="font-semibold">{barber.firstName} {barber.lastName}</p>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-300">{t("reserveWith")} {barber.firstName}</p>
-                </button>
-              ))}
+              {availableBarbers.map((barber) => {
+                const instagramUrl = normalizeInstagramUrl(barber.instagramUrl);
+                return (
+                  <button
+                    key={barber.id}
+                    type="button"
+                    onClick={() => setConfirmBarberId(barber.id)}
+                    className="group rounded-lg border border-zinc-200 dark:border-zinc-700 p-3 bg-zinc-50 dark:bg-zinc-800/70 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
+                  >
+                    <div className="relative">
+                      <img
+                        src={barber.photoUrl || "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=400&q=80"}
+                        alt={`${barber.firstName} ${barber.lastName}`}
+                        className="h-36 w-full rounded-md object-cover mb-2"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openInstagram(barber.instagramUrl);
+                        }}
+                      />
+                      <span className={`absolute inset-x-2 bottom-3 rounded-md px-2 py-1 text-xs font-semibold text-white bg-black/70 transition ${instagramUrl ? "opacity-100 sm:opacity-0 sm:group-hover:opacity-100" : "opacity-100"}`}>
+                        {instagramUrl ? "Go to Instagram" : "Instagram not set"}
+                      </span>
+                    </div>
+                    <p className="font-semibold">{barber.firstName} {barber.lastName}</p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-300">{t("reserveWith")} {barber.firstName}</p>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
