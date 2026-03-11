@@ -1,11 +1,11 @@
 import { ReservationForm } from "@/components/ReservationForm";
 import { Navbar } from "@/components/layout/Navbar";
 import { useBarbers } from "@/hooks/use-barbers";
-import { CalendarClock, ShieldCheck, Gift } from "lucide-react";
+import { CalendarClock, ShieldCheck, Gift, Instagram } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
-import { useBarberGallery, useLandingMedia } from "@/hooks/use-advanced";
+import { useBarberGallery } from "@/hooks/use-advanced";
 import { normalizeInstagramUrl } from "@/lib/instagram";
 
 const HERO_BG =
@@ -17,31 +17,21 @@ export default function Landing() {
   const [selectedBarberId, setSelectedBarberId] = useState<number | null>(null);
   const [confirmBarberId, setConfirmBarberId] = useState<number | null>(null);
   const [galleryBarberId, setGalleryBarberId] = useState<number | null>(null);
-  const [zoomedMedia, setZoomedMedia] = useState<{ src: string; title: string; type: "image" | "video" } | null>(null);
+  const [zoomedMedia, setZoomedMedia] = useState<{ src: string; title: string } | null>(null);
   const gallery = useBarberGallery(confirmBarberId ?? undefined);
   const clientGallery = useBarberGallery(galleryBarberId ?? undefined);
-  const landingMedia = useLandingMedia();
-  const landingPhotoItems = useMemo(
-    () =>
-      (landingMedia.data?.photos ?? [])
-        .map((p: any) => ({
-          id: String(p?.id ?? ""),
-          title: String(p?.title ?? ""),
-          imageUrl: String(p?.imageUrl ?? p?.image_url ?? p?.url ?? ""),
-        }))
-        .filter((p: any) => p.imageUrl.trim().length > 0),
-    [landingMedia.data?.photos],
-  );
-  const landingVideoItems = useMemo(
-    () =>
-      (landingMedia.data?.videos ?? [])
-        .map((v: any) => ({
-          id: String(v?.id ?? ""),
-          title: String(v?.title ?? ""),
-          videoUrl: String(v?.videoUrl ?? v?.video_url ?? v?.url ?? ""),
-        }))
-        .filter((v: any) => v.videoUrl.trim().length > 0),
-    [landingMedia.data?.videos],
+  const landingGalleryItems = useMemo(
+    () => ([
+      { id: "gallery-1", title: "Fresh Fade", fileName: "WhatsApp Image 2026-03-09 at 9.39.58 PM.jpeg" },
+      { id: "gallery-2", title: "Sharp Line-Up", fileName: "WhatsApp Image 2026-03-09 at 9.39.59 PM.jpeg" },
+      { id: "gallery-3", title: "Clean Beard", fileName: "WhatsApp Image 2026-03-09 at 9.39.59 PM (1).jpeg" },
+      { id: "gallery-4", title: "Modern Cut", fileName: "WhatsApp Image 2026-03-09 at 9.39.59 PM (2).jpeg" },
+      { id: "gallery-5", title: "Texture Work", fileName: "WhatsApp Image 2026-03-09 at 9.39.59 PM (3).jpeg" },
+      { id: "gallery-6", title: "Classic Finish", fileName: "WhatsApp Image 2026-03-09 at 9.39.59 PM (4).jpeg" },
+      { id: "gallery-7", title: "Studio Angle", fileName: "WhatsApp Image 2026-03-09 at 9.40.00 PM.jpeg" },
+      { id: "gallery-8", title: "Detail Work", fileName: "WhatsApp Image 2026-03-09 at 9.40.00 PM (1).jpeg" },
+    ]),
+    [],
   );
 
   const openInstagram = (rawUrl?: string | null) => {
@@ -134,7 +124,26 @@ export default function Landing() {
                       </span>
                     </div>
                     <p className="font-semibold">{barber.firstName} {barber.lastName}</p>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-300">{t("reserveWith")} {barber.firstName}</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs text-zinc-500 dark:text-zinc-300">{t("reserveWith")} {barber.firstName}</p>
+                      <button
+                        type="button"
+                        className={`h-7 w-7 inline-flex items-center justify-center rounded-full border text-xs transition ${
+                          instagramUrl
+                            ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                            : "border-zinc-200 text-zinc-400 cursor-not-allowed"
+                        }`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (instagramUrl) openInstagram(instagramUrl);
+                        }}
+                        title={instagramUrl ? "Open Instagram" : "Instagram not set"}
+                        aria-label={instagramUrl ? "Open Instagram" : "Instagram not set"}
+                        disabled={!instagramUrl}
+                      >
+                        <Instagram className="h-4 w-4" />
+                      </button>
+                    </div>
                   </button>
                 );
               })}
@@ -143,32 +152,56 @@ export default function Landing() {
         </div>
       </section>
 
-      <section className="py-2 md:py-6 px-4 sm:px-6">
-        <div className="max-w-7xl mx-auto grid gap-5 md:grid-cols-3">
-          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 md:col-span-2">
+      <section className="py-6 md:py-12 px-4 sm:px-6">
+        <div className="max-w-7xl mx-auto relative">
+          <div className="absolute -inset-x-20 -top-10 -bottom-10 rounded-[40px] bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.18),_transparent_55%),radial-gradient(circle_at_bottom,_rgba(14,116,144,0.16),_transparent_60%)]" />
+          <div className="absolute inset-y-4 -left-10 w-24 rounded-[30px] bg-gradient-to-b from-amber-100/60 via-white/30 to-emerald-100/60 blur-md" />
+          <div className="absolute inset-y-8 -right-12 w-28 rounded-[30px] bg-gradient-to-b from-emerald-100/50 via-white/30 to-amber-100/50 blur-md" />
+          <div className="absolute -top-8 left-8 h-20 w-20 rounded-full bg-amber-300/25 blur-2xl" />
+          <div className="absolute -bottom-8 right-10 h-24 w-24 rounded-full bg-emerald-300/20 blur-2xl" />
+          <div className="relative grid gap-5 md:grid-cols-3 rounded-[28px] border border-zinc-200 dark:border-zinc-800 bg-white/92 dark:bg-zinc-900/90 p-5 md:p-7 backdrop-blur">
+            <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 md:col-span-2 shadow-sm">
             <h3 className="text-xl font-semibold mb-2">Barber Gallery</h3>
-            <p className="text-sm text-zinc-600 dark:text-zinc-300 mb-3">Choose a barber and see their latest posts.</p>
-            <div className="flex flex-wrap gap-2 mb-3">
-              {availableBarbers.map((barber) => (
-                <Button
-                  key={`gallery-picker-${barber.id}`}
-                  type="button"
-                  variant={galleryBarberId === Number(barber.id) ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setGalleryBarberId(Number(barber.id))}
-                >
-                  {barber.firstName}
-                </Button>
-              ))}
+            <p className="text-sm text-zinc-600 dark:text-zinc-300 mb-4">Choose a barber and see their latest posts.</p>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {availableBarbers.map((barber) => {
+                const instagramUrl = normalizeInstagramUrl(barber.instagramUrl);
+                return (
+                  <div key={`gallery-picker-${barber.id}`} className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant={galleryBarberId === Number(barber.id) ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setGalleryBarberId(Number(barber.id))}
+                    >
+                      {barber.firstName}
+                    </Button>
+                    <button
+                      type="button"
+                      className={`h-8 w-8 inline-flex items-center justify-center rounded-full border text-xs transition ${
+                        instagramUrl
+                          ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                          : "border-zinc-200 text-zinc-400 cursor-not-allowed"
+                      }`}
+                      onClick={() => instagramUrl && openInstagram(instagramUrl)}
+                      title={instagramUrl ? "Open Instagram" : "Instagram not set"}
+                      aria-label={instagramUrl ? "Open Instagram" : "Instagram not set"}
+                      disabled={!instagramUrl}
+                    >
+                      <Instagram className="h-4 w-4" />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {(clientGallery.data ?? []).map((img: any) => (
-                <div key={`gallery-public-${img.id}`} className="rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800">
+                <div key={`gallery-public-${img.id}`} className="rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 shadow-sm">
                   <img
                     src={img.image_url || img.imageUrl}
                     alt={img.caption || "Gallery"}
                     className="h-28 w-full object-cover cursor-zoom-in"
-                    onClick={() => setZoomedMedia({ src: img.image_url || img.imageUrl, title: img.caption || "Barber post", type: "image" })}
+                    onClick={() => setZoomedMedia({ src: img.image_url || img.imageUrl, title: img.caption || "Barber post" })}
                   />
                   <p className="text-xs px-2 py-1 text-zinc-600 dark:text-zinc-300 truncate">{img.caption || "Barber post"}</p>
                 </div>
@@ -178,70 +211,41 @@ export default function Landing() {
               ) : null}
             </div>
           </div>
-          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 md:col-span-1">
-            <h3 className="text-xl font-semibold mb-2">Photo Boxes</h3>
-            <p className="text-sm text-zinc-600 dark:text-zinc-300 mb-3">Add before/after photos, team highlights, and shop vibes.</p>
-            <div className="grid grid-cols-2 gap-2">
-              {landingPhotoItems.map((p: any) => (
+            <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 md:col-span-3 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                <div>
+                  <h3 className="text-xl font-semibold">Gallery</h3>
+                  <p className="text-sm text-zinc-600 dark:text-zinc-300">WhatsApp photos from `client/public/pic`.</p>
+                </div>
+                <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-full px-3 py-1">Tap any photo to enlarge</div>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {landingGalleryItems.map((item) => (
                 <button
-                  key={p.id}
+                  key={item.id}
                   type="button"
                   className="group relative overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-950 text-left"
-                  onClick={() => setZoomedMedia({ src: p.imageUrl, title: p.title || "Photo", type: "image" })}
+                  onClick={() => setZoomedMedia({ src: `/pic/${encodeURIComponent(item.fileName)}`, title: item.title })}
                 >
                   <img
-                    src={p.imageUrl}
-                    alt={p.title || "Photo"}
-                    className="h-28 w-full object-cover transition duration-300 group-hover:scale-105"
+                    src={`/pic/${encodeURIComponent(item.fileName)}`}
+                    alt={item.title}
+                    className="h-32 w-full object-cover transition duration-300 group-hover:scale-105"
                   />
                   <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-3 py-2">
-                    <p className="text-xs font-medium text-white truncate">{p.title || "Photo"}</p>
+                    <p className="text-xs font-medium text-white truncate">{item.title}</p>
                     <p className="text-[11px] text-zinc-200">Tap to enlarge</p>
                   </div>
                 </button>
               ))}
-              {landingPhotoItems.length === 0 ? (
-                <>
-                  <div className="rounded-lg h-16 border border-dashed border-zinc-300 dark:border-zinc-700 flex items-center justify-center text-xs text-zinc-500 dark:text-zinc-300">Photo 1</div>
-                  <div className="rounded-lg h-16 border border-dashed border-zinc-300 dark:border-zinc-700 flex items-center justify-center text-xs text-zinc-500 dark:text-zinc-300">Photo 2</div>
-                  <div className="rounded-lg h-16 border border-dashed border-zinc-300 dark:border-zinc-700 flex items-center justify-center text-xs text-zinc-500 dark:text-zinc-300">Photo 3</div>
-                  <div className="rounded-lg h-16 border border-dashed border-zinc-300 dark:border-zinc-700 flex items-center justify-center text-xs text-zinc-500 dark:text-zinc-300">Photo 4</div>
-                </>
-              ) : null}
-            </div>
-          </div>
-          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 md:col-span-3">
-            <h3 className="text-xl font-semibold mb-2">Video Boxes</h3>
-            <p className="text-sm text-zinc-600 dark:text-zinc-300 mb-3">Reserve slots for reels, transformations, or tutorials.</p>
-            <div className="grid md:grid-cols-3 gap-2">
-              {landingVideoItems.map((v: any) => (
-                <button
-                  key={v.id}
-                  type="button"
-                  className="group relative overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-950 text-left"
-                  onClick={() => setZoomedMedia({ src: v.videoUrl, title: v.title || "Video", type: "video" })}
-                >
-                  <video
-                    className="h-44 w-full object-cover"
-                    src={v.videoUrl}
-                    muted
-                    playsInline
-                    preload="metadata"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent" />
-                  <div className="absolute inset-x-0 bottom-0 px-3 py-3">
-                    <p className="text-sm font-medium text-white truncate">{v.title || "Video"}</p>
-                    <p className="text-xs text-zinc-200">Tap to open</p>
+              </div>
+              <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+                {landingGalleryItems.slice(0, 4).map((item) => (
+                  <div key={`gallery-tile-${item.id}`} className="rounded-xl border border-dashed border-amber-200 bg-amber-50/60 px-3 py-2 text-xs text-amber-800">
+                    {item.title}
                   </div>
-                </button>
-              ))}
-              {landingVideoItems.length === 0 ? (
-                <>
-                  <div className="rounded-lg h-20 border border-dashed border-zinc-300 dark:border-zinc-700 flex items-center justify-center text-xs text-zinc-500 dark:text-zinc-300">Video slot 1</div>
-                  <div className="rounded-lg h-20 border border-dashed border-zinc-300 dark:border-zinc-700 flex items-center justify-center text-xs text-zinc-500 dark:text-zinc-300">Video slot 2</div>
-                  <div className="rounded-lg h-20 border border-dashed border-zinc-300 dark:border-zinc-700 flex items-center justify-center text-xs text-zinc-500 dark:text-zinc-300">Video slot 3</div>
-                </>
-              ) : null}
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -286,7 +290,7 @@ export default function Landing() {
                     src={img.image_url || img.imageUrl}
                     alt={img.caption || "Portfolio"}
                     className="h-20 w-full rounded object-cover cursor-zoom-in"
-                    onClick={() => setZoomedMedia({ src: img.image_url || img.imageUrl, title: img.caption || "Portfolio", type: "image" })}
+                    onClick={() => setZoomedMedia({ src: img.image_url || img.imageUrl, title: img.caption || "Portfolio" })}
                   />
                 ))}
                 {(!gallery.data || gallery.data.length === 0) ? <p className="text-xs text-zinc-500 dark:text-zinc-300 col-span-3">No gallery photos yet.</p> : null}
@@ -314,17 +318,7 @@ export default function Landing() {
                 Close
               </Button>
             </div>
-            {zoomedMedia.type === "video" ? (
-              <video
-                src={zoomedMedia.src}
-                controls
-                autoPlay
-                playsInline
-                className="w-full max-h-[82vh] rounded-xl border border-white/20 bg-black"
-              />
-            ) : (
-              <img src={zoomedMedia.src} alt={zoomedMedia.title} className="w-full max-h-[82vh] object-contain rounded-xl border border-white/20 bg-black" />
-            )}
+            <img src={zoomedMedia.src} alt={zoomedMedia.title} className="w-full max-h-[82vh] object-contain rounded-xl border border-white/20 bg-black" />
             {zoomedMedia.title ? <p className="mt-2 text-center text-sm text-zinc-200">{zoomedMedia.title}</p> : null}
           </div>
         </div>

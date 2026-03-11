@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useLocation } from "wouter";
-import { Plus, Users, CalendarDays, Scissors, LogOut, CheckCircle2, CircleX, Clock3, Pencil, Trash2, FileBarChart2, MessageSquareText, BarChart3, Moon, Sun, Home, Image as ImageIcon, Video } from "lucide-react";
+import { Plus, Users, CalendarDays, Scissors, LogOut, CheckCircle2, CircleX, Clock3, Pencil, Trash2, FileBarChart2, MessageSquareText, BarChart3, Moon, Sun, Home, Image as ImageIcon } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,7 +27,6 @@ import { playNotificationTone } from "@/lib/playNotificationTone";
 import { useTheme } from "@/hooks/use-theme";
 import AppointmentCalendar from "@/components/AppointmentCalendar";
 import AdminAdvancedModules from "@/components/AdminAdvancedModules";
-import { useLandingMedia, useSaveLandingMedia } from "@/hooks/use-advanced";
 import { formatLek } from "@/lib/money";
 
 type AdminTab =
@@ -155,8 +154,6 @@ export default function AdminDashboard() {
   const { data: earnings } = useEarningsSummary();
   const { data: settings } = usePublicSettings();
   const saveSettings = useSaveAdminSettings();
-  const { data: landingMedia } = useLandingMedia();
-  const saveLandingMedia = useSaveLandingMedia();
 
   const [activeTab, setActiveTab] = useState<AdminTab>("appointments");
   const [editingService, setEditingService] = useState<ServiceType | null>(null);
@@ -197,9 +194,6 @@ export default function AdminDashboard() {
   const [developerUnlocked, setDeveloperUnlocked] = useState(false);
   const [developerSearch, setDeveloperSearch] = useState("");
   const [developerAutoRefresh, setDeveloperAutoRefresh] = useState(false);
-  const [landingPhotos, setLandingPhotos] = useState<{ id: string; title: string; imageUrl: string }[]>([]);
-  const [landingVideos, setLandingVideos] = useState<{ id: string; title: string; videoUrl: string }[]>([]);
-  const [landingMediaProcessing, setLandingMediaProcessing] = useState(0);
   const [newAdminForm, setNewAdminForm] = useState({
     username: "",
     password: "",
@@ -717,61 +711,6 @@ export default function AdminDashboard() {
     await loadGroups();
   };
 
-  const readFileAsDataUrl = (file: File): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result ?? ""));
-      reader.onerror = () => reject(new Error("Could not read file."));
-      reader.readAsDataURL(file);
-    });
-
-  const readImageAsCompressedDataUrl = (file: File): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const img = new Image();
-        img.onload = () => {
-          try {
-            const canvas = document.createElement("canvas");
-            const max = 1280;
-            const ratio = Math.min(1, max / Math.max(img.width, img.height));
-            canvas.width = Math.round(img.width * ratio);
-            canvas.height = Math.round(img.height * ratio);
-            const ctx = canvas.getContext("2d");
-            if (!ctx) return reject(new Error("Canvas is not supported."));
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            resolve(canvas.toDataURL("image/jpeg", 0.72));
-          } catch {
-            reject(new Error("Could not compress image."));
-          }
-        };
-        img.onerror = () => reject(new Error("Invalid image file."));
-        img.src = String(reader.result ?? "");
-      };
-      reader.onerror = () => reject(new Error("Could not read file."));
-      reader.readAsDataURL(file);
-    });
-
-  const handleSaveLandingMedia = async () => {
-    if (landingMediaProcessing > 0) {
-      toast({ variant: "destructive", title: "Please wait", description: "File processing is still running." });
-      return;
-    }
-    try {
-      const cleanPhotos = landingPhotos
-        .map((p) => ({ id: String(p.id), title: String(p.title ?? "").trim(), imageUrl: String(p.imageUrl ?? "").trim() }))
-        .filter((p) => p.imageUrl.length > 0);
-      const cleanVideos = landingVideos
-        .map((v) => ({ id: String(v.id), title: String(v.title ?? "").trim(), videoUrl: String(v.videoUrl ?? "").trim() }))
-        .filter((v) => v.videoUrl.length > 0);
-      await saveLandingMedia.mutateAsync({ photos: cleanPhotos, videos: cleanVideos });
-      setLandingPhotos(cleanPhotos);
-      setLandingVideos(cleanVideos);
-      toast({ title: "Landing gallery saved" });
-    } catch (err: any) {
-      toast({ variant: "destructive", title: "Save failed", description: err.message || "Could not save landing media." });
-    }
-  };
 
   const handleCreateAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -861,21 +800,6 @@ export default function AdminDashboard() {
     setWallQueueLimit(String(settings.wallQueueLimit));
   }, [settings]);
 
-  useEffect(() => {
-    if (!landingMedia) return;
-    const normalizedPhotos = (landingMedia.photos ?? []).map((p: any, idx: number) => ({
-      id: String(p?.id ?? `photo-${idx}`),
-      title: String(p?.title ?? ""),
-      imageUrl: String(p?.imageUrl ?? p?.image_url ?? p?.url ?? ""),
-    }));
-    const normalizedVideos = (landingMedia.videos ?? []).map((v: any, idx: number) => ({
-      id: String(v?.id ?? `video-${idx}`),
-      title: String(v?.title ?? ""),
-      videoUrl: String(v?.videoUrl ?? v?.video_url ?? v?.url ?? ""),
-    }));
-    setLandingPhotos(normalizedPhotos);
-    setLandingVideos(normalizedVideos);
-  }, [landingMedia]);
 
   useEffect(() => {
     void loadExpenses();
@@ -2047,106 +1971,15 @@ export default function AdminDashboard() {
           </TabsContent>
 
           <TabsContent value="gallery" className="space-y-6">
-            <div className="rounded-xl border border-amber-200 bg-white p-5 space-y-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-xl font-semibold">Landing Gallery Manager</h3>
-                <Button size="sm" onClick={() => void handleSaveLandingMedia()} disabled={saveLandingMedia.isPending || landingMediaProcessing > 0}>
-                  {landingMediaProcessing > 0 ? "Processing files..." : saveLandingMedia.isPending ? "Saving..." : "Save Gallery"}
-                </Button>
-              </div>
-              <p className="text-sm text-zinc-600">Upload content for Landing page Photo Boxes and Video Boxes.</p>
-            </div>
-
             <div className="rounded-xl border border-amber-200 bg-white p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <h4 className="text-lg font-semibold flex items-center gap-2"><ImageIcon className="h-4 w-4" /> Photo Boxes</h4>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setLandingPhotos((prev) => [...prev, { id: String(Date.now()), title: "New Photo", imageUrl: "" }])}
-                >
-                  Add Photo Box
-                </Button>
+              <div className="flex items-center gap-2">
+                <ImageIcon className="h-5 w-5" />
+                <h3 className="text-xl font-semibold">Landing Gallery</h3>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {landingPhotos.map((p, idx) => (
-                  <div key={p.id} className="rounded-lg border border-zinc-200 p-3 space-y-2">
-                    <Input
-                      value={p.title}
-                      onChange={(e) => setLandingPhotos((prev) => prev.map((item, i) => (i === idx ? { ...item, title: e.target.value } : item)))}
-                      placeholder="Photo title"
-                    />
-                    <Input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        setLandingMediaProcessing((v) => v + 1);
-                        void (async () => {
-                          try {
-                            const dataUrl = await readImageAsCompressedDataUrl(file);
-                            setLandingPhotos((prev) => prev.map((item, i) => (i === idx ? { ...item, imageUrl: dataUrl } : item)));
-                          } finally {
-                            setLandingMediaProcessing((v) => Math.max(0, v - 1));
-                          }
-                        })();
-                      }}
-                    />
-                    {p.imageUrl ? <img src={p.imageUrl} alt={p.title} className="h-24 w-full object-cover rounded border" /> : <div className="h-24 rounded border border-dashed flex items-center justify-center text-xs text-zinc-500">No image</div>}
-                    <Button size="sm" variant="destructive" onClick={() => setLandingPhotos((prev) => prev.filter((_, i) => i !== idx))}>Delete</Button>
-                  </div>
-                ))}
-                {landingPhotos.length === 0 ? <p className="text-sm text-zinc-500">No photo boxes yet.</p> : null}
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-amber-200 bg-white p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <h4 className="text-lg font-semibold flex items-center gap-2"><Video className="h-4 w-4" /> Video Boxes</h4>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setLandingVideos((prev) => [...prev, { id: String(Date.now()), title: "New Video", videoUrl: "" }])}
-                >
-                  Add Video Box
-                </Button>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {landingVideos.map((v, idx) => (
-                  <div key={v.id} className="rounded-lg border border-zinc-200 p-3 space-y-2">
-                    <Input
-                      value={v.title}
-                      onChange={(e) => setLandingVideos((prev) => prev.map((item, i) => (i === idx ? { ...item, title: e.target.value } : item)))}
-                      placeholder="Video title"
-                    />
-                    <Input
-                      type="file"
-                      accept="video/*"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        if (file.size > 8 * 1024 * 1024) {
-                          toast({ variant: "destructive", title: "Video too large", description: "Use a video file under 8MB." });
-                          return;
-                        }
-                        setLandingMediaProcessing((v) => v + 1);
-                        void (async () => {
-                          try {
-                            const dataUrl = await readFileAsDataUrl(file);
-                            setLandingVideos((prev) => prev.map((item, i) => (i === idx ? { ...item, videoUrl: dataUrl } : item)));
-                          } finally {
-                            setLandingMediaProcessing((v) => Math.max(0, v - 1));
-                          }
-                        })();
-                      }}
-                    />
-                    {v.videoUrl ? <video controls className="h-24 w-full object-cover rounded border" src={v.videoUrl} /> : <div className="h-24 rounded border border-dashed flex items-center justify-center text-xs text-zinc-500">No video</div>}
-                    <Button size="sm" variant="destructive" onClick={() => setLandingVideos((prev) => prev.filter((_, i) => i !== idx))}>Delete</Button>
-                  </div>
-                ))}
-                {landingVideos.length === 0 ? <p className="text-sm text-zinc-500">No video boxes yet.</p> : null}
-              </div>
+              <p className="text-sm text-zinc-600">
+                The landing gallery now uses static images from `client/public/pic`.
+                Upload your photos there and update the list in `Landing.tsx` if you change filenames.
+              </p>
             </div>
           </TabsContent>
 
