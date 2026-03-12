@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, MapPin, Scissors, User as UserIcon, Clock, ShieldCheck, CircleAlert, CreditCard, Wallet, BadgeCheck, ExternalLink } from "lucide-react";
+import { Calendar as CalendarIcon, MapPin, Scissors, User as UserIcon, Clock, ShieldCheck, CircleAlert, Wallet } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,15 +45,8 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
     guestEmail: "",
     paymentMethod: "cash_on_arrival",
   });
-  const [pendingPaysera, setPendingPaysera] = useState<{
-    appointmentId: number;
-    reference: string;
-    checkoutUrl: string;
-    amount: number;
-  } | null>(null);
   const [extraServiceIds, setExtraServiceIds] = useState<number[]>([]);
   const [geoCoords, setGeoCoords] = useState<{ lat: number; lng: number } | null>(null);
-  const [cancellationPolicy, setCancellationPolicy] = useState<{ freeCancelHours: number; lateFee: number } | null>(null);
   const nearestBranch = useNearestBranch(geoCoords?.lat, geoCoords?.lng);
 
   const updateForm = (key: keyof typeof formData, value: string | Date) => {
@@ -74,7 +67,6 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
       guestEmail: "",
       paymentMethod: "cash_on_arrival",
     }));
-    setPendingPaysera(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -107,8 +99,8 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
         appointmentDate: finalDate.toISOString(),
         status: "pending",
         paymentMethod: formData.paymentMethod,
-        paymentStatus: formData.paymentMethod === "paysera_test" ? "pending" : "unpaid",
-        prepaidAmount: formData.paymentMethod === "paysera_test" ? Math.max(0, Math.floor(totalPrice)) : 0,
+        paymentStatus: "unpaid",
+        prepaidAmount: 0,
       };
 
       if (user) {
@@ -123,34 +115,7 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
         payload.guestEmail = formData.guestEmail.trim();
       }
 
-      const appointment = await createAppointment.mutateAsync(payload);
-
-      if (formData.paymentMethod === "paysera_test") {
-        const amount = Math.max(0, Math.floor(totalPrice));
-        const sessionRes = await fetch(api.payments.payseraCreateSession.path, {
-          method: api.payments.payseraCreateSession.method,
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ appointmentId: Number(appointment.id), amount }),
-        });
-        const sessionData = await sessionRes.json().catch(() => ({}));
-        if (!sessionRes.ok) {
-          throw new Error(sessionData?.message || "Failed to create Paysera test session");
-        }
-
-        setPendingPaysera({
-          appointmentId: Number(appointment.id),
-          reference: String(sessionData.reference),
-          checkoutUrl: String(sessionData.checkoutUrl),
-          amount,
-        });
-
-        toast({
-          title: "Appointment created (payment pending)",
-          description: "Use the test checkout button, then confirm payment below.",
-        });
-        return;
-      }
+      await createAppointment.mutateAsync(payload);
 
       toast({
         title: t("reservationSubmitted"),
@@ -163,35 +128,6 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
         variant: "destructive",
         title: t("reservationFailed"),
         description: error.message || t("tryAgain"),
-      });
-    }
-  };
-
-  const handleConfirmPayseraTestPayment = async () => {
-    if (!pendingPaysera) return;
-    try {
-      const res = await fetch(api.payments.payseraConfirm.path, {
-        method: api.payments.payseraConfirm.method,
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          appointmentId: pendingPaysera.appointmentId,
-          reference: pendingPaysera.reference,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.message || "Failed to confirm test payment");
-
-      toast({
-        title: "Payment confirmed",
-        description: "Paysera test payment marked as paid.",
-      });
-      resetForm();
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Payment confirmation failed",
-        description: error.message || "Try again.",
       });
     }
   };
@@ -278,13 +214,6 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
   }, [formData.serviceId, services]);
 
   useEffect(() => {
-    fetch(api.cancellationPolicy.get.path, { credentials: "include" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((v) => setCancellationPolicy(v))
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
     if (!nearestBranch.data?.id) return;
     setFormData((prev) => ({ ...prev, branchId: String(nearestBranch.data.id) }));
   }, [nearestBranch.data?.id]);
@@ -295,12 +224,12 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
         <div className="h-full bg-zinc-900 transition-all duration-500 ease-out" style={{ width: `${(step / 3) * 100}%` }} />
       </div>
 
-      <CardHeader className="pt-7">
-        <CardTitle className="text-3xl text-center">{t("bookYourAppointment")}</CardTitle>
-        <CardDescription className="text-center text-zinc-500 dark:text-zinc-300">{t("stepOf3")} {step} {t("of")} 3</CardDescription>
+      <CardHeader className="pt-5 sm:pt-7">
+        <CardTitle className="text-2xl sm:text-3xl text-center">{t("bookYourAppointment")}</CardTitle>
+        <CardDescription className="text-center text-sm text-zinc-500 dark:text-zinc-300">{t("stepOf3")} {step} {t("of")} 3</CardDescription>
       </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-6">
+      <CardContent className="pt-1">
+        <form onSubmit={handleSubmit} className="space-y-5 sm:space-y-6">
           {step === 1 && (
             <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
               <div className="space-y-2">
@@ -538,7 +467,7 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
 
               <div className="space-y-2">
                 <Label className="text-zinc-700 dark:text-zinc-200">Payment option</Label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3">
                   <button
                     type="button"
                     onClick={() => updateForm("paymentMethod", "cash_on_arrival")}
@@ -553,63 +482,21 @@ export function ReservationForm({ preselectedBarberId }: { preselectedBarberId?:
                     </div>
                     <p className="text-xs text-zinc-500 mt-1">No prepayment. Pay on arrival.</p>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => updateForm("paymentMethod", "paysera_test")}
-                    className={cn(
-                      "rounded-lg border p-3 text-left transition-colors",
-                       formData.paymentMethod === "paysera_test" ? "border-zinc-900 bg-zinc-100 dark:bg-zinc-800" : "border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800",
-                    )}
-                  >
-                     <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100">
-                      <CreditCard className="w-4 h-4" />
-                      Pay in advance (Paysera Test)
-                    </div>
-                    <p className="text-xs text-zinc-500 mt-1">Recommended. This uses test mode only.</p>
-                  </button>
                 </div>
-                {formData.paymentMethod === "paysera_test" && (
-                   <p className="text-sm text-zinc-600 dark:text-zinc-300 flex items-center gap-2">
-                    <BadgeCheck className="w-4 h-4 text-emerald-600" />
-                    Advance amount: {formatLek(Number(totalPrice ?? 0))}
-                  </p>
-                )}
               </div>
 
-              {cancellationPolicy ? (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-                  Cancellation policy: free up to {cancellationPolicy.freeCancelHours}h before appointment. Late cancellation fee: {formatLek(cancellationPolicy.lateFee)}.
-                </div>
-              ) : null}
-
-              {pendingPaysera ? (
-                 <div className="space-y-3 p-4 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/60">
-                   <p className="text-sm font-medium text-zinc-800 dark:text-zinc-100">Paysera test payment pending</p>
-                   <p className="text-xs text-zinc-500 dark:text-zinc-300">Reference: {pendingPaysera.reference}</p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button type="button" className="bg-zinc-900 hover:bg-zinc-800 text-white" onClick={() => window.open(pendingPaysera.checkoutUrl, "_blank", "noopener,noreferrer")}>
-                      <ExternalLink className="w-4 h-4 mr-2" />
-                      Open Test Checkout
-                    </Button>
-                     <Button type="button" variant="outline" className="border-zinc-300 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-800" onClick={handleConfirmPayseraTestPayment}>
-                      I Completed Test Payment
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex gap-3 pt-2">
-                   <Button type="button" variant="outline" className="w-full border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800" onClick={() => setStep(2)}>
-                    {t("back")}
-                  </Button>
-                  <Button
-                    type="submit"
-                    className="w-full bg-zinc-900 hover:bg-zinc-800 text-white font-semibold"
-                    disabled={createAppointment.isPending || (!user && (!formData.guestFirstName || !formData.guestLastName || !formData.guestPhone))}
-                  >
-                    {createAppointment.isPending ? t("submitting") : formData.paymentMethod === "paysera_test" ? "Create Appointment + Paysera Test" : t("submitReservation")}
-                  </Button>
-                </div>
-              )}
+              <div className="flex gap-3 pt-2">
+                 <Button type="button" variant="outline" className="w-full border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800" onClick={() => setStep(2)}>
+                  {t("back")}
+                </Button>
+                <Button
+                  type="submit"
+                  className="w-full bg-zinc-900 hover:bg-zinc-800 text-white font-semibold"
+                  disabled={createAppointment.isPending || (!user && (!formData.guestFirstName || !formData.guestLastName || !formData.guestPhone))}
+                >
+                  {createAppointment.isPending ? t("submitting") : t("submitReservation")}
+                </Button>
+              </div>
 
               {user && formData.serviceId && formData.appointmentDate && (
                 <Button

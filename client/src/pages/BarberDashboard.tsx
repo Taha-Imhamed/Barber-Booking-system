@@ -13,6 +13,7 @@ import { playNotificationTone } from "@/lib/playNotificationTone";
 import { useUpdateBarber } from "@/hooks/use-barbers";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@shared/routes";
 import { usePublicSettings } from "@/hooks/use-settings";
 import { useTheme } from "@/hooks/use-theme";
@@ -27,7 +28,7 @@ export default function BarberDashboard() {
   const { user, logout, isLoading } = useAuth();
   const barberUser = user?.role === "barber" ? user : null;
   const { toast } = useToast();
-  const { t } = useI18n();
+  const { lang, setLang, t } = useI18n();
   const { themeMode, toggleTheme } = useTheme();
 
   const { data: allAppointments } = useAppointments();
@@ -55,6 +56,8 @@ export default function BarberDashboard() {
   const [replaceFileById, setReplaceFileById] = useState<Record<number, File | null>>({});
   const [isAvailable, setIsAvailable] = useState<boolean>(barberUser?.isAvailable !== false);
   const [instagramUrl, setInstagramUrl] = useState<string>(barberUser?.instagramUrl ?? "");
+  const [passwordDraft, setPasswordDraft] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
   const [unavailableHours, setUnavailableHours] = useState<string[]>(() => {
     try {
       const parsed = JSON.parse(barberUser?.unavailableHours ?? "[]");
@@ -268,6 +271,29 @@ export default function BarberDashboard() {
     }
   };
 
+  const handleChangePassword = async () => {
+    if (!barberUser) return;
+    if (passwordDraft.trim().length < 6) {
+      toast({ variant: "destructive", title: t("passwordTooShort"), description: t("passwordMin6") });
+      return;
+    }
+    if (passwordDraft !== passwordConfirm) {
+      toast({ variant: "destructive", title: t("passwordMismatch"), description: t("tryAgain") });
+      return;
+    }
+    try {
+      await updateBarber.mutateAsync({
+        id: barberUser.id,
+        data: { password: passwordDraft.trim() } as any,
+      });
+      setPasswordDraft("");
+      setPasswordConfirm("");
+      toast({ title: t("passwordUpdated") });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: t("error"), description: err.message || t("tryAgain") });
+    }
+  };
+
   const getServiceName = (id: number) => services?.find((s) => s.id === id)?.name || "Service";
   const statusChipClass = (status: string) => {
     if (status === "accepted") return "status-chip status-chip--accepted";
@@ -287,25 +313,37 @@ export default function BarberDashboard() {
     if (res.ok) setGroupMessages(await res.json());
   };
 
-  if (isLoading) return <div className="p-8 text-center text-slate-500">Loading dashboard...</div>;
+  if (isLoading) return <div className="p-8 text-center text-slate-500">{t("loading")}</div>;
   if (!barberUser) return <div className="p-8 text-center text-red-500">Access denied. Barber only.</div>;
 
   return (
     <div className="barber-theme min-h-screen bg-slate-100 dark:bg-zinc-950 text-slate-900 dark:text-zinc-100 flex flex-col md:flex-row">
       <aside className="w-full md:w-72 bg-white dark:bg-zinc-900 border-r border-slate-200 dark:border-zinc-800 p-6 flex flex-col">
         <div className="mb-8 flex items-center justify-between gap-3">
-          <h2 className="text-2xl font-semibold">Barber Portal</h2>
+          <h2 className="text-2xl font-semibold">{t("barberPortal")}</h2>
           <Button type="button" variant="outline" size="icon" title={`Theme: ${themeMode}`} onClick={toggleTheme}>
             {themeMode === "dark" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
           </Button>
         </div>
+        <div className="mb-6">
+          <Label className="text-xs text-slate-500 mb-2 block">{t("language")}</Label>
+          <Select value={lang} onValueChange={(value) => setLang(value as "en" | "tr")}>
+            <SelectTrigger>
+              <SelectValue placeholder={t("language")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="en">{t("english")}</SelectItem>
+              <SelectItem value="tr">{t("turkish")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <nav className="space-y-2 mb-6">
-          <Button variant={view === "pending" ? "default" : "outline"} className="w-full justify-start" onClick={() => setView("pending")}>Pending</Button>
-          <Button variant={view === "upcoming" ? "default" : "outline"} className="w-full justify-start" onClick={() => setView("upcoming")}>Upcoming</Button>
-          <Button variant={view === "accepted" ? "default" : "outline"} className="w-full justify-start" onClick={() => setView("accepted")}>Accepted</Button>
-          <Button variant={view === "timetable" ? "default" : "outline"} className="w-full justify-start" onClick={() => setView("timetable")}>Full Timetable</Button>
-          <Button variant={view === "gallery" ? "default" : "outline"} className="w-full justify-start" onClick={() => setView("gallery")}>Gallery</Button>
-          <Button variant={view === "chat" ? "default" : "outline"} className="w-full justify-start" onClick={() => { setView("chat"); void loadGroups(); }}>Group Chat</Button>
+          <Button variant={view === "pending" ? "default" : "outline"} className="w-full justify-start" onClick={() => setView("pending")}>{t("pending")}</Button>
+          <Button variant={view === "upcoming" ? "default" : "outline"} className="w-full justify-start" onClick={() => setView("upcoming")}>{t("upcoming")}</Button>
+          <Button variant={view === "accepted" ? "default" : "outline"} className="w-full justify-start" onClick={() => setView("accepted")}>{t("accepted")}</Button>
+          <Button variant={view === "timetable" ? "default" : "outline"} className="w-full justify-start" onClick={() => setView("timetable")}>{t("fullTimetable")}</Button>
+          <Button variant={view === "gallery" ? "default" : "outline"} className="w-full justify-start" onClick={() => setView("gallery")}>{t("gallery")}</Button>
+          <Button variant={view === "chat" ? "default" : "outline"} className="w-full justify-start" onClick={() => { setView("chat"); void loadGroups(); }}>{t("groupChat")}</Button>
         </nav>
 
         <div className="mt-auto pt-6 border-t border-slate-200">
@@ -323,7 +361,7 @@ export default function BarberDashboard() {
             className="w-full mb-2"
             onClick={() => setLocation("/")}
           >
-            <Home className="mr-2 h-4 w-4" /> Back To Home
+            <Home className="mr-2 h-4 w-4" /> {t("backHome")}
           </Button>
           <Button
             variant="destructive"
@@ -333,7 +371,7 @@ export default function BarberDashboard() {
               setLocation("/");
             }}
           >
-            <LogOut className="mr-2 h-4 w-4" /> Logout
+            <LogOut className="mr-2 h-4 w-4" /> {t("signOut")}
           </Button>
         </div>
       </aside>
@@ -437,6 +475,26 @@ export default function BarberDashboard() {
                 </Button>
               </div>
               <p className="text-xs text-slate-500 mt-1">Clients can open this when they tap your photo.</p>
+            </div>
+            <div className="mt-4 max-w-xl">
+              <Label className="text-sm text-slate-700">{t("changePassword")}</Label>
+              <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <Input
+                  type="password"
+                  value={passwordDraft}
+                  onChange={(e) => setPasswordDraft(e.target.value)}
+                  placeholder={t("newPassword")}
+                />
+                <Input
+                  type="password"
+                  value={passwordConfirm}
+                  onChange={(e) => setPasswordConfirm(e.target.value)}
+                  placeholder={t("confirmPassword")}
+                />
+              </div>
+              <Button type="button" className="mt-2" onClick={handleChangePassword} disabled={updateBarber.isPending}>
+                {updateBarber.isPending ? t("processing") : t("savePassword")}
+              </Button>
             </div>
           {view === "gallery" && (
           <div className="mt-4 rounded-xl border border-slate-200 p-4 bg-white">

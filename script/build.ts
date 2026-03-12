@@ -1,6 +1,7 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
 import { rm, readFile } from "fs/promises";
+import { generateSitemap } from "./generate-sitemap";
 
 // Bundle selected server dependencies to reduce cold-start file lookups.
 const allowlist = [
@@ -33,6 +34,9 @@ const allowlist = [
 
 async function buildAll() {
   await rm("dist", { recursive: true, force: true });
+
+  console.log("generating sitemap...");
+  await generateSitemap();
 
   console.log("building client...");
   await viteBuild();

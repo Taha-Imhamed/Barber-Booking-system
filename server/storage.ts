@@ -34,7 +34,7 @@ import {
   type ChatMessageType,
   type AppSettingType,
 } from "@shared/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, sql } from "drizzle-orm";
 
 export interface IStorage {
   // Users (Auth & Barbers)
@@ -130,7 +130,11 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getUserByUsername(username: string): Promise<UserType | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.username, username));
+    const normalized = username.trim().toLowerCase();
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(sql`lower(${users.username}) = ${normalized}`);
     return user;
   }
 

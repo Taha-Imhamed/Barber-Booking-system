@@ -42,7 +42,6 @@ export async function registerRoutes(
   const salonAddress = process.env.SALON_ADDRESS || "Istanbul";
   const configuredAppBaseUrl = process.env.APP_BASE_URL?.replace(/\/$/, "") || "";
   const configuredApiBaseUrl = process.env.API_BASE_URL?.replace(/\/$/, "") || "";
-  const payseraTestBaseUrl = process.env.PAYSERA_TEST_CHECKOUT_URL || "https://sandbox.paysera.com/mock-checkout";
   const defaultGoogleClientId = "519299194836-q7bvbn0jlonm6u47crap9lfhcg6835m0.apps.googleusercontent.com";
 
   function getRequestOrigin(req?: Express.Request) {
@@ -111,11 +110,6 @@ export async function registerRoutes(
 
   function normalizePhone(phone: string) {
     return phone.replace(/\D/g, "");
-  }
-
-  function makePaymentReference(appointmentId: number): string {
-    const seed = crypto.randomBytes(4).toString("hex").toUpperCase();
-    return `PAYSERA-TEST-${appointmentId}-${seed}`;
   }
 
   function parseNumericContent(content: string): number | null {
@@ -279,35 +273,6 @@ export async function registerRoutes(
       await storage.createService({ name: "Full Package (Hair + Beard)", price: 30, durationMinutes: 50 });
     }
 
-    const appointmentItems = await storage.getAppointments();
-    const existingBarbers = await storage.getBarbers();
-    const firstBarber = existingBarbers[0];
-    if (appointmentItems.length === 0 && firstBarber && firstBranch) {
-      const services = await storage.getServices();
-      const firstService = services[0];
-      if (firstService) {
-        await storage.createAppointment({
-          clientId: null,
-          guestFirstName: "Alice",
-          guestLastName: "Johnson",
-          guestPhone: "111222333",
-          guestEmail: "alice@example.com",
-          barberId: firstBarber.id,
-          serviceId: firstService.id,
-          branchId: firstBranch.id,
-          appointmentDate: new Date(Date.now() + 1000 * 60 * 60 * 24),
-          status: "pending",
-          proposedDate: null,
-          proposedByRole: null,
-          proposedStatus: "none",
-          paymentMethod: "cash_on_arrival",
-          paymentStatus: "unpaid",
-          prepaidAmount: 0,
-          paymentReference: null,
-          isDeleted: false,
-        });
-      }
-    }
   }
 
   seed().catch(console.error);
@@ -332,7 +297,7 @@ export async function registerRoutes(
   app.post(api.auth.login.path, async (req, res) => {
     try {
       const { username, password } = api.auth.login.input.parse(req.body);
-      const normalizedUsername = username.trim();
+      const normalizedUsername = username.trim().toLowerCase();
       const normalizedPassword = password.trim();
       const user = await storage.getUserByUsername(normalizedUsername);
       if (!user) {
@@ -403,9 +368,10 @@ export async function registerRoutes(
   app.post(api.auth.register.path, async (req, res) => {
     try {
       const input = api.auth.register.input.parse(req.body);
+      const normalizedUsername = input.username?.trim().toLowerCase() ?? null;
       const hashedPassword = input.password ? await hash(input.password, 10) : null;
       const user = await storage.createUser({
-        username: input.username ?? null,
+        username: normalizedUsername,
         googleId: input.googleId ?? null,
         password: hashedPassword,
         authProvider: "local",
@@ -679,9 +645,10 @@ export async function registerRoutes(
     if (!admin) return;
     try {
       const input = api.barbers.create.input.parse(req.body);
+      const normalizedUsername = input.username?.trim().toLowerCase() ?? null;
       const hashedPassword = input.password ? await hash(input.password, 10) : null;
       const barber = await storage.createUser({
-        username: input.username ?? null,
+        username: normalizedUsername,
         googleId: input.googleId ?? null,
         password: hashedPassword,
         authProvider: "local",
@@ -724,8 +691,13 @@ export async function registerRoutes(
 
       let nextInput = { ...input } as any;
       if (isSelfBarber) {
-        const allowed = new Set(["photoUrl", "isAvailable", "unavailableHours", "instagramUrl"]);
+        const allowed = new Set(["photoUrl", "isAvailable", "unavailableHours", "instagramUrl", "password"]);
         nextInput = Object.fromEntries(Object.entries(nextInput).filter(([key]) => allowed.has(key)));
+        if (typeof nextInput.password === "string" && nextInput.password.trim().length > 0) {
+          nextInput.password = await hash(nextInput.password.trim(), 10);
+        } else {
+          delete nextInput.password;
+        }
       } else {
         if (typeof nextInput.password === "string" && nextInput.password.trim().length > 0) {
           nextInput.password = await hash(nextInput.password.trim(), 10);
@@ -982,57 +954,6 @@ export async function registerRoutes(
         return res.status(400).json({ message: err.errors[0].message, field: err.errors[0].path.join(".") });
       }
       res.status(400).json({ message: "Bad Request" });
-    }
-  });
-
-  app.post(api.payments.payseraCreateSession.path, async (req, res) => {
-    try {
-      const { appointmentId, amount } = api.payments.payseraCreateSession.input.parse(req.body);
-      const appointment = await storage.getAppointment(appointmentId);
-      if (!appointment) return res.status(404).json({ message: "Appointment not found" });
-
-      const reference = appointment.paymentReference || makePaymentReference(appointment.id);
-      await storage.updateAppointment(appointment.id, {
-        paymentMethod: "paysera_test",
-        paymentStatus: "pending",
-        prepaidAmount: Math.max(0, Math.floor(amount)),
-        paymentReference: reference,
-      });
-
-      const checkoutUrl = `${payseraTestBaseUrl}?reference=${encodeURIComponent(reference)}&amount=${encodeURIComponent(String(Math.max(0, Math.floor(amount))))}&appointmentId=${appointment.id}`;
-      return res.json({ ok: true, checkoutUrl, reference, mode: "test" as const });
-    } catch {
-      return res.status(400).json({ message: "Bad Request" });
-    }
-  });
-
-  app.post(api.payments.payseraConfirm.path, async (req, res) => {
-    try {
-      const { appointmentId, reference } = api.payments.payseraConfirm.input.parse(req.body);
-      const appointment = await storage.getAppointment(appointmentId);
-      if (!appointment) return res.status(404).json({ message: "Appointment not found" });
-
-      if (appointment.paymentReference && appointment.paymentReference !== reference) {
-        return res.status(409).json({ message: "Payment reference mismatch" });
-      }
-
-      const updated = await storage.updateAppointment(appointment.id, {
-        paymentMethod: "paysera_test",
-        paymentStatus: "paid",
-        paymentReference: reference,
-      });
-
-      if (updated.clientId) {
-        await storage.createNotification({
-          userId: updated.clientId,
-          message: `Payment received in test mode for appointment #${updated.id}.`,
-          isRead: false,
-        });
-      }
-
-      return res.json({ ok: true, paymentStatus: updated.paymentStatus, appointmentId: updated.id });
-    } catch {
-      return res.status(400).json({ message: "Bad Request" });
     }
   });
 
@@ -1623,13 +1544,14 @@ export async function registerRoutes(
     if (!admin) return;
     try {
       const input = api.admin.createAdmin.input.parse(req.body);
-      const existing = await storage.getUserByUsername(input.username);
+      const normalizedUsername = input.username.trim().toLowerCase();
+      const existing = await storage.getUserByUsername(normalizedUsername);
       if (existing) return res.status(400).json({ message: "Username already exists." });
       const hashedPassword = await hash(input.password.trim(), 10);
       const allowed = new Set<string>(ADMIN_PERMISSIONS);
       const permissions = (input.permissions ?? []).filter((p) => allowed.has(String(p)));
       const created = await storage.createUser({
-        username: input.username.trim(),
+        username: normalizedUsername,
         googleId: null,
         password: hashedPassword,
         authProvider: "local",
@@ -1709,7 +1631,7 @@ export async function registerRoutes(
       const nextData: Record<string, any> = {};
       if (password) nextData.password = await hash(password.trim(), 10);
       if (username) {
-        const normalizedUsername = username.trim();
+        const normalizedUsername = username.trim().toLowerCase();
         const existing = await storage.getUserByUsername(normalizedUsername);
         if (existing && existing.id !== id) return res.status(400).json({ message: "Username already exists." });
         nextData.username = normalizedUsername;

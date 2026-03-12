@@ -213,39 +213,6 @@ export const api = {
       responses: { 200: z.custom<typeof appointments.$inferSelect>() },
     },
   },
-  payments: {
-    payseraCreateSession: {
-      method: "POST" as const,
-      path: "/api/payments/paysera/create-session" as const,
-      input: z.object({
-        appointmentId: z.number(),
-        amount: z.number().nonnegative(),
-      }),
-      responses: {
-        200: z.object({
-          ok: z.boolean(),
-          checkoutUrl: z.string(),
-          reference: z.string(),
-          mode: z.literal("test"),
-        }),
-      },
-    },
-    payseraConfirm: {
-      method: "POST" as const,
-      path: "/api/payments/paysera/confirm" as const,
-      input: z.object({
-        appointmentId: z.number(),
-        reference: z.string().min(1),
-      }),
-      responses: {
-        200: z.object({
-          ok: z.boolean(),
-          paymentStatus: z.string(),
-          appointmentId: z.number(),
-        }),
-      },
-    },
-  },
   feedbacks: {
     list: {
       method: "GET" as const,

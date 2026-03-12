@@ -25,6 +25,7 @@ import { usePublicSettings, useSaveAdminSettings } from "@/hooks/use-settings";
 import { useQueryClient } from "@tanstack/react-query";
 import { playNotificationTone } from "@/lib/playNotificationTone";
 import { useTheme } from "@/hooks/use-theme";
+import { useI18n } from "@/i18n";
 import AppointmentCalendar from "@/components/AppointmentCalendar";
 import AdminAdvancedModules from "@/components/AdminAdvancedModules";
 import { formatLek } from "@/lib/money";
@@ -44,6 +45,37 @@ type AdminTab =
   | "growth";
 
 type AdminThemeKey = "original" | "saasBlue" | "darkIndigo" | "blackGold" | "cleanModern" | "softModern";
+
+const parseGoogleMapsCoords = (raw: string): { lat: number; lng: number } | null => {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  const atMatch = trimmed.match(/@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/);
+  if (atMatch) {
+    return { lat: Number.parseFloat(atMatch[1]), lng: Number.parseFloat(atMatch[2]) };
+  }
+  try {
+    const parsed = new URL(trimmed);
+    const query = parsed.searchParams.get("q") || parsed.searchParams.get("query") || parsed.searchParams.get("ll");
+    if (query) {
+      const qMatch = query.match(/(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/);
+      if (qMatch) {
+        return { lat: Number.parseFloat(qMatch[1]), lng: Number.parseFloat(qMatch[2]) };
+      }
+    }
+  } catch {
+    // ignore URL parse errors
+  }
+  const plainMatch = trimmed.match(/(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/);
+  if (plainMatch) {
+    return { lat: Number.parseFloat(plainMatch[1]), lng: Number.parseFloat(plainMatch[2]) };
+  }
+  return null;
+};
+
+const buildGoogleMapsUrl = (lat?: number | null, lng?: number | null) => {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return "";
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lng}`)}`;
+};
 
 const ADMIN_THEMES: Record<
   AdminThemeKey,
@@ -135,6 +167,7 @@ export default function AdminDashboard() {
   const { user, logout, isLoading } = useAuth();
   const { toast } = useToast();
   const { themeMode, toggleTheme } = useTheme();
+  const { lang, setLang, t } = useI18n();
   const queryClient = useQueryClient();
 
   const { data: appointments } = useAppointments();
@@ -254,7 +287,7 @@ export default function AdminDashboard() {
   };
 
   const [newService, setNewService] = useState({ name: "", price: "", durationMinutes: "" });
-  const [newBranch, setNewBranch] = useState({ name: "", location: "" });
+  const [newBranch, setNewBranch] = useState({ name: "", location: "", mapsUrl: "", latitude: "", longitude: "" });
   const [newBarber, setNewBarber] = useState({
     username: "",
     password: "",
@@ -359,9 +392,16 @@ export default function AdminDashboard() {
   const handleCreateBranch = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await createBranch.mutateAsync(newBranch);
+      const latitude = newBranch.latitude ? Number.parseFloat(newBranch.latitude) : null;
+      const longitude = newBranch.longitude ? Number.parseFloat(newBranch.longitude) : null;
+      await createBranch.mutateAsync({
+        name: newBranch.name,
+        location: newBranch.location,
+        latitude: Number.isFinite(latitude) ? latitude : null,
+        longitude: Number.isFinite(longitude) ? longitude : null,
+      });
       toast({ title: "Branch created" });
-      setNewBranch({ name: "", location: "" });
+      setNewBranch({ name: "", location: "", mapsUrl: "", latitude: "", longitude: "" });
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     }
@@ -979,16 +1019,16 @@ export default function AdminDashboard() {
       <aside className={`w-full md:w-72 p-6 flex flex-col ${activeTab === "developer" ? "bg-black/80 backdrop-blur-xl border-r border-blue-400/30" : "bg-white/85 dark:bg-zinc-900/80 backdrop-blur border-r border-amber-200 dark:border-zinc-800"}`}>
         <h2 className="text-2xl font-semibold mb-2">Istanbul Salon</h2>
         <div className="mb-8 flex items-center justify-between gap-3">
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">Admin Control</p>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">{t("adminControl")}</p>
           <Button type="button" variant="outline" size="icon" title={`Theme: ${themeMode}`} onClick={toggleTheme}>
             {themeMode === "dark" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
           </Button>
         </div>
         <div className="mb-4">
-          <Label className="text-xs text-zinc-500 mb-2 block">Dashboard Theme</Label>
+          <Label className="text-xs text-zinc-500 mb-2 block">{t("dashboardTheme")}</Label>
           <Select value={adminThemeKey} onValueChange={(value) => setAdminThemeKey(value as AdminThemeKey)}>
             <SelectTrigger>
-              <SelectValue placeholder="Select theme" />
+              <SelectValue placeholder={t("selectTheme")} />
             </SelectTrigger>
             <SelectContent>
               {ADMIN_THEME_ORDER.map((key) => (
@@ -1004,60 +1044,72 @@ export default function AdminDashboard() {
             </SelectContent>
           </Select>
         </div>
+        <div className="mb-4">
+          <Label className="text-xs text-zinc-500 mb-2 block">{t("language")}</Label>
+          <Select value={lang} onValueChange={(value) => setLang(value as "en" | "tr")}>
+            <SelectTrigger>
+              <SelectValue placeholder={t("language")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="en">{t("english")}</SelectItem>
+              <SelectItem value="tr">{t("turkish")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <nav className="space-y-2 flex-1">
           {canViewTab("appointments") && (
           <Button variant={activeTab === "appointments" ? "default" : "ghost"} className="w-full justify-start admin-link-blur" onClick={() => setActiveTab("appointments")}>
-            <CalendarDays className="mr-3 h-5 w-5" /> Appointments
+            <CalendarDays className="mr-3 h-5 w-5" /> {t("appointments")}
           </Button>
           )}
           {canViewTab("barbers") && (
           <Button variant={activeTab === "barbers" ? "default" : "ghost"} className="w-full justify-start admin-link-blur" onClick={() => setActiveTab("barbers")}>
-            <Users className="mr-3 h-5 w-5" /> Barbers & Branches
+            <Users className="mr-3 h-5 w-5" /> {t("barbersBranches")}
           </Button>
           )}
           {canViewTab("services") && (
           <Button variant={activeTab === "services" ? "default" : "ghost"} className="w-full justify-start admin-link-blur" onClick={() => setActiveTab("services")}>
-            <Scissors className="mr-3 h-5 w-5" /> Services
+            <Scissors className="mr-3 h-5 w-5" /> {t("servicesLabel")}
           </Button>
           )}
           {canViewTab("reports") && (
           <Button variant={activeTab === "reports" ? "default" : "ghost"} className="w-full justify-start admin-link-blur" onClick={() => setActiveTab("reports")}>
-            <FileBarChart2 className="mr-3 h-5 w-5" /> Reports
+            <FileBarChart2 className="mr-3 h-5 w-5" /> {t("reportsLabel")}
           </Button>
           )}
           {canViewTab("timetable") && (
           <Button variant={activeTab === "timetable" ? "default" : "ghost"} className="w-full justify-start admin-link-blur" onClick={() => setActiveTab("timetable")}>
-            <CalendarDays className="mr-3 h-5 w-5" /> Timetable
+            <CalendarDays className="mr-3 h-5 w-5" /> {t("timetable")}
           </Button>
           )}
           {canViewTab("finance") && (
           <Button variant={activeTab === "finance" ? "default" : "ghost"} className="w-full justify-start admin-link-blur" onClick={() => setActiveTab("finance")}>
-            <BarChart3 className="mr-3 h-5 w-5" /> Finance
+            <BarChart3 className="mr-3 h-5 w-5" /> {t("financeLabel")}
           </Button>
           )}
           {canViewTab("chat") && (
           <Button variant={activeTab === "chat" ? "default" : "ghost"} className="w-full justify-start admin-link-blur" onClick={() => { setActiveTab("chat"); void loadGroups(); }}>
-            <MessageSquareText className="mr-3 h-5 w-5" /> Group Chat
+            <MessageSquareText className="mr-3 h-5 w-5" /> {t("groupChat")}
           </Button>
           )}
           {canViewTab("wallDisplay") && (
           <Button variant={activeTab === "wallDisplay" ? "default" : "ghost"} className="w-full justify-start admin-link-blur" onClick={() => setActiveTab("wallDisplay")}>
-            <CalendarDays className="mr-3 h-5 w-5" /> Wall Display
+            <CalendarDays className="mr-3 h-5 w-5" /> {t("wallDisplayLabel")}
           </Button>
           )}
           {canViewTab("gallery") && (
           <Button variant={activeTab === "gallery" ? "default" : "ghost"} className="w-full justify-start admin-link-blur" onClick={() => setActiveTab("gallery")}>
-            <ImageIcon className="mr-3 h-5 w-5" /> Gallery
+            <ImageIcon className="mr-3 h-5 w-5" /> {t("gallery")}
           </Button>
           )}
           {canViewTab("users") && (
           <Button variant={activeTab === "users" ? "default" : "ghost"} className="w-full justify-start admin-link-blur" onClick={() => setActiveTab("users")}>
-            <Users className="mr-3 h-5 w-5" /> Users
+            <Users className="mr-3 h-5 w-5" /> {t("usersLabel")}
           </Button>
           )}
           {canViewTab("growth") && (
           <Button variant={activeTab === "growth" ? "default" : "ghost"} className="w-full justify-start admin-link-blur" onClick={() => setActiveTab("growth")}>
-            <BarChart3 className="mr-3 h-5 w-5" /> Growth & Ops
+            <BarChart3 className="mr-3 h-5 w-5" /> {t("growthOpsLabel")}
           </Button>
           )}
           {canViewTab("developer") && (
@@ -1069,7 +1121,7 @@ export default function AdminDashboard() {
               setActiveTab("developer");
             }}
           >
-            <BarChart3 className="mr-3 h-5 w-5" /> Developer
+            <BarChart3 className="mr-3 h-5 w-5" /> {t("developerLabel")}
           </Button>
           )}
         </nav>
@@ -1086,7 +1138,7 @@ export default function AdminDashboard() {
             className="w-full mb-2"
             onClick={() => setLocation("/")}
           >
-            <Home className="mr-2 h-4 w-4" /> Back To Home
+            <Home className="mr-2 h-4 w-4" /> {t("backHome")}
           </Button>
           <Button
             variant="destructive"
@@ -1096,7 +1148,7 @@ export default function AdminDashboard() {
               setLocation("/");
             }}
           >
-            <LogOut className="mr-2 h-4 w-4" /> Logout
+            <LogOut className="mr-2 h-4 w-4" /> {t("signOut")}
           </Button>
         </div>
       </aside>
@@ -1130,17 +1182,17 @@ export default function AdminDashboard() {
         >
           <TabsList className="bg-white border border-amber-100 mb-6 w-full overflow-x-auto flex-wrap h-auto">
             {canViewTab("appointments") && <TabsTrigger value="appointments">Appointments</TabsTrigger>}
-            {canViewTab("barbers") && <TabsTrigger value="barbers">Barbers & Branches</TabsTrigger>}
-            {canViewTab("services") && <TabsTrigger value="services">Services</TabsTrigger>}
-            {canViewTab("reports") && <TabsTrigger value="reports">Reports</TabsTrigger>}
-            {canViewTab("timetable") && <TabsTrigger value="timetable">Timetable</TabsTrigger>}
-            {canViewTab("finance") && <TabsTrigger value="finance">Finance</TabsTrigger>}
-            {canViewTab("chat") && <TabsTrigger value="chat">Group Chat</TabsTrigger>}
-            {canViewTab("wallDisplay") && <TabsTrigger value="wallDisplay">Wall Display</TabsTrigger>}
-            {canViewTab("gallery") && <TabsTrigger value="gallery">Gallery</TabsTrigger>}
-            {canViewTab("users") && <TabsTrigger value="users">Users</TabsTrigger>}
-            {canViewTab("growth") && <TabsTrigger value="growth">Growth & Ops</TabsTrigger>}
-            {canViewTab("developer") && <TabsTrigger value="developer">Developer</TabsTrigger>}
+            {canViewTab("barbers") && <TabsTrigger value="barbers">{t("barbersBranches")}</TabsTrigger>}
+            {canViewTab("services") && <TabsTrigger value="services">{t("servicesLabel")}</TabsTrigger>}
+            {canViewTab("reports") && <TabsTrigger value="reports">{t("reportsLabel")}</TabsTrigger>}
+            {canViewTab("timetable") && <TabsTrigger value="timetable">{t("timetable")}</TabsTrigger>}
+            {canViewTab("finance") && <TabsTrigger value="finance">{t("financeLabel")}</TabsTrigger>}
+            {canViewTab("chat") && <TabsTrigger value="chat">{t("groupChat")}</TabsTrigger>}
+            {canViewTab("wallDisplay") && <TabsTrigger value="wallDisplay">{t("wallDisplayLabel")}</TabsTrigger>}
+            {canViewTab("gallery") && <TabsTrigger value="gallery">{t("gallery")}</TabsTrigger>}
+            {canViewTab("users") && <TabsTrigger value="users">{t("usersLabel")}</TabsTrigger>}
+            {canViewTab("growth") && <TabsTrigger value="growth">{t("growthOpsLabel")}</TabsTrigger>}
+            {canViewTab("developer") && <TabsTrigger value="developer">{t("developerLabel")}</TabsTrigger>}
           </TabsList>
 
           <TabsContent value="appointments" className="space-y-6">
@@ -1812,11 +1864,64 @@ export default function AdminDashboard() {
           <TabsContent value="barbers" className="space-y-6">
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
               <div className="bg-white border border-amber-100 rounded-xl p-5">
-                <h3 className="text-xl font-semibold mb-4">Manage Branches</h3>
-                <form onSubmit={handleCreateBranch} className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-4">
-                  <Input placeholder="Branch name" value={newBranch.name} onChange={(e) => setNewBranch({ ...newBranch, name: e.target.value })} required />
-                  <Input placeholder="Location" value={newBranch.location} onChange={(e) => setNewBranch({ ...newBranch, location: e.target.value })} required />
-                  <Button type="submit" disabled={createBranch.isPending}><Plus className="w-4 h-4 mr-1" /> Add Branch</Button>
+                <h3 className="text-xl font-semibold mb-4">{t("manageBranches")}</h3>
+                <form onSubmit={handleCreateBranch} className="grid grid-cols-1 gap-2 mb-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    <Input placeholder={t("branchName")} value={newBranch.name} onChange={(e) => setNewBranch({ ...newBranch, name: e.target.value })} required />
+                    <Input placeholder={t("locationLabel")} value={newBranch.location} onChange={(e) => setNewBranch({ ...newBranch, location: e.target.value })} required />
+                    <Button type="submit" disabled={createBranch.isPending}><Plus className="w-4 h-4 mr-1" /> {t("addBranch")}</Button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-[1.2fr_0.4fr] gap-2">
+                    <Input
+                      placeholder={t("googleMapsLink")}
+                      value={newBranch.mapsUrl}
+                      onChange={(e) => setNewBranch({ ...newBranch, mapsUrl: e.target.value })}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        const coords = parseGoogleMapsCoords(newBranch.mapsUrl);
+                        if (!coords) {
+                          toast({ variant: "destructive", title: "Map link not detected", description: "Paste a Google Maps link with coordinates." });
+                          return;
+                        }
+                        setNewBranch((prev) => ({
+                          ...prev,
+                          latitude: coords.lat.toFixed(6),
+                          longitude: coords.lng.toFixed(6),
+                        }));
+                      }}
+                    >
+                      {t("detectFromLink")}
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <Input
+                      placeholder={t("latitudeLabel")}
+                      value={newBranch.latitude}
+                      onChange={(e) => setNewBranch({ ...newBranch, latitude: e.target.value })}
+                    />
+                    <Input
+                      placeholder={t("longitudeLabel")}
+                      value={newBranch.longitude}
+                      onChange={(e) => setNewBranch({ ...newBranch, longitude: e.target.value })}
+                    />
+                  </div>
+                  {newBranch.latitude && newBranch.longitude ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="justify-start"
+                      onClick={() => {
+                        const url = buildGoogleMapsUrl(Number(newBranch.latitude), Number(newBranch.longitude));
+                        if (!url) return;
+                        window.open(url, "_blank", "noopener,noreferrer");
+                      }}
+                    >
+                      {t("openInGoogleMaps")}
+                    </Button>
+                  ) : null}
                 </form>
                 <div className="space-y-2">
                   {branches?.map((b) => (
@@ -1824,10 +1929,27 @@ export default function AdminDashboard() {
                       <div>
                         <p className="font-medium">{b.name}</p>
                         <p className="text-sm text-zinc-500">{b.location}</p>
+                        {Number.isFinite(Number(b.latitude)) && Number.isFinite(Number(b.longitude)) ? (
+                          <p className="text-xs text-zinc-400">Lat: {Number(b.latitude).toFixed(5)} | Lng: {Number(b.longitude).toFixed(5)}</p>
+                        ) : null}
                       </div>
-                      <Button variant="outline" size="sm" onClick={() => deleteBranch.mutate(b.id)} disabled={deleteBranch.isPending}>
-                        <Trash2 className="w-4 h-4 mr-1" /> Delete
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        {Number.isFinite(Number(b.latitude)) && Number.isFinite(Number(b.longitude)) ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const url = buildGoogleMapsUrl(Number(b.latitude), Number(b.longitude));
+                              if (url) window.open(url, "_blank", "noopener,noreferrer");
+                            }}
+                          >
+                            {t("openMap")}
+                          </Button>
+                        ) : null}
+                        <Button variant="outline" size="sm" onClick={() => deleteBranch.mutate(b.id)} disabled={deleteBranch.isPending}>
+                          <Trash2 className="w-4 h-4 mr-1" /> Delete
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>

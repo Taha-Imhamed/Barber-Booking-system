@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { Scissors, LogIn, LayoutDashboard, LogOut, Bell, Moon, Sun } from "lucide-react";
+import { LogIn, LayoutDashboard, LogOut, Bell, Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { useNotifications } from "@/hooks/use-notifications";
@@ -16,17 +16,17 @@ export function Navbar() {
   return (
     <nav className="sticky top-0 w-full z-50 bg-white/90 backdrop-blur-md border-b border-zinc-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-20 items-center">
+        <div className="flex justify-between h-16 sm:h-20 items-center">
           <Link href="/" className="flex items-center gap-3 group">
-            <div className="bg-zinc-900 p-2.5 rounded-xl transition-transform group-hover:scale-105">
-              <Scissors className="w-5 h-5 text-white" />
+            <div className="bg-zinc-900/5 border border-zinc-200 p-2 rounded-xl transition-transform group-hover:scale-105">
+              <img src="/pic/logo.png" alt="Istanbul Salon" className="h-8 w-8 object-contain" />
             </div>
-            <span className="font-display text-2xl font-semibold text-zinc-900 tracking-tight">
+            <span className="font-display text-lg sm:text-2xl font-semibold text-zinc-900 tracking-tight">
               Istanbul<span className="text-zinc-500">Salon</span>
             </span>
           </Link>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <a href="/#timetable" className="text-sm font-semibold text-zinc-500 hover:text-zinc-900 transition-colors hidden md:block">
               {t("timetable")}
             </a>
@@ -37,7 +37,7 @@ export function Navbar() {
               aria-label={t("language")}
               value={lang}
               onChange={(e) => setLang(e.target.value as "en" | "tr" | "sq" | "it")}
-              className="h-9 w-[76px] sm:w-auto rounded-md border border-zinc-300 bg-white px-2 text-sm text-zinc-700"
+              className="h-8 sm:h-9 w-[70px] sm:w-auto rounded-md border border-zinc-300 bg-white px-2 text-xs sm:text-sm text-zinc-700"
             >
               <option value="en">{t("english")}</option>
               <option value="tr">{t("turkish")}</option>
@@ -50,7 +50,7 @@ export function Navbar() {
               size="icon"
               title={`Theme: ${themeMode}`}
               onClick={toggleTheme}
-              className="border-zinc-300 text-zinc-700 hover:bg-zinc-100"
+              className="border-zinc-300 text-zinc-700 hover:bg-zinc-100 h-8 w-8 sm:h-9 sm:w-9"
             >
               {themeMode === "dark" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
             </Button>
@@ -99,8 +99,9 @@ export function Navbar() {
               </div>
             ) : (
               <Link href="/auth">
-                <Button className="bg-zinc-900 hover:bg-zinc-800 text-white font-semibold px-4 sm:px-6">
-                  <LogIn className="w-4 h-4 mr-2" /> {t("signIn")}
+                <Button className="bg-zinc-900 hover:bg-zinc-800 text-white font-semibold px-3 sm:px-6 h-9 sm:h-10">
+                  <LogIn className="w-4 h-4 sm:mr-2" />
+                  <span className="hidden sm:inline">{t("signIn")}</span>
                 </Button>
               </Link>
             )}

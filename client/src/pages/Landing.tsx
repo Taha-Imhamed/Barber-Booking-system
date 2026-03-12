@@ -98,10 +98,8 @@ export default function Landing() {
         <div className="max-w-7xl mx-auto grid grid-cols-1 gap-6">
           <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
             <h2 className="text-2xl font-semibold mb-3">{t("team")}</h2>
-            <p className="text-zinc-600 dark:text-zinc-300 mb-4">{t("teamTapPhoto")}</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {availableBarbers.map((barber) => {
-                const instagramUrl = normalizeInstagramUrl(barber.instagramUrl);
                 return (
                   <button
                     key={barber.id}
@@ -113,36 +111,12 @@ export default function Landing() {
                       <img
                         src={barber.photoUrl || "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=400&q=80"}
                         alt={`${barber.firstName} ${barber.lastName}`}
-                        className="h-36 w-full rounded-md object-cover mb-2"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openInstagram(barber.instagramUrl);
-                        }}
+                        className="w-full aspect-square rounded-md object-cover mb-2"
                       />
-                      <span className={`absolute inset-x-2 bottom-3 rounded-md px-2 py-1 text-xs font-semibold text-white bg-black/70 transition ${instagramUrl ? "opacity-100 sm:opacity-0 sm:group-hover:opacity-100" : "opacity-100"}`}>
-                        {instagramUrl ? "Go to Instagram" : "Instagram not set"}
-                      </span>
                     </div>
                     <p className="font-semibold">{barber.firstName} {barber.lastName}</p>
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-xs text-zinc-500 dark:text-zinc-300">{t("reserveWith")} {barber.firstName}</p>
-                      <button
-                        type="button"
-                        className={`h-7 w-7 inline-flex items-center justify-center rounded-full border text-xs transition ${
-                          instagramUrl
-                            ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
-                            : "border-zinc-200 text-zinc-400 cursor-not-allowed"
-                        }`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (instagramUrl) openInstagram(instagramUrl);
-                        }}
-                        title={instagramUrl ? "Open Instagram" : "Instagram not set"}
-                        aria-label={instagramUrl ? "Open Instagram" : "Instagram not set"}
-                        disabled={!instagramUrl}
-                      >
-                        <Instagram className="h-4 w-4" />
-                      </button>
                     </div>
                   </button>
                 );
@@ -160,57 +134,57 @@ export default function Landing() {
           <div className="absolute -top-8 left-8 h-20 w-20 rounded-full bg-amber-300/25 blur-2xl" />
           <div className="absolute -bottom-8 right-10 h-24 w-24 rounded-full bg-emerald-300/20 blur-2xl" />
           <div className="relative grid gap-5 md:grid-cols-3 rounded-[28px] border border-zinc-200 dark:border-zinc-800 bg-white/92 dark:bg-zinc-900/90 p-5 md:p-7 backdrop-blur">
-            <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 md:col-span-2 shadow-sm">
-            <h3 className="text-xl font-semibold mb-2">Barber Gallery</h3>
-            <p className="text-sm text-zinc-600 dark:text-zinc-300 mb-4">Choose a barber and see their latest posts.</p>
-            <div className="flex flex-wrap gap-2 mb-4">
-              {availableBarbers.map((barber) => {
-                const instagramUrl = normalizeInstagramUrl(barber.instagramUrl);
-                return (
-                  <div key={`gallery-picker-${barber.id}`} className="flex items-center gap-1">
-                    <Button
-                      type="button"
-                      variant={galleryBarberId === Number(barber.id) ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setGalleryBarberId(Number(barber.id))}
-                    >
-                      {barber.firstName}
-                    </Button>
-                    <button
-                      type="button"
-                      className={`h-8 w-8 inline-flex items-center justify-center rounded-full border text-xs transition ${
-                        instagramUrl
-                          ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
-                          : "border-zinc-200 text-zinc-400 cursor-not-allowed"
-                      }`}
-                      onClick={() => instagramUrl && openInstagram(instagramUrl)}
-                      title={instagramUrl ? "Open Instagram" : "Instagram not set"}
-                      aria-label={instagramUrl ? "Open Instagram" : "Instagram not set"}
-                      disabled={!instagramUrl}
-                    >
-                      <Instagram className="h-4 w-4" />
-                    </button>
+            <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 md:col-span-3 shadow-sm">
+              <h3 className="text-xl font-semibold mb-2 text-center">Barber Gallery</h3>
+              <p className="text-sm text-zinc-600 dark:text-zinc-300 mb-4 text-center">Choose a barber and see their latest posts.</p>
+              <div className="flex flex-wrap gap-2 mb-4">
+                {availableBarbers.map((barber) => {
+                  const instagramUrl = normalizeInstagramUrl(barber.instagramUrl);
+                  return (
+                    <div key={`gallery-picker-${barber.id}`} className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        variant={galleryBarberId === Number(barber.id) ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setGalleryBarberId(Number(barber.id))}
+                      >
+                        {barber.firstName}
+                      </Button>
+                      <button
+                        type="button"
+                        className={`h-8 w-8 inline-flex items-center justify-center rounded-full border text-xs transition ${
+                          instagramUrl
+                            ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                            : "border-zinc-200 text-zinc-400 cursor-not-allowed"
+                        }`}
+                        onClick={() => instagramUrl && openInstagram(instagramUrl)}
+                        title={instagramUrl ? "Open Instagram" : "Instagram not set"}
+                        aria-label={instagramUrl ? "Open Instagram" : "Instagram not set"}
+                        disabled={!instagramUrl}
+                      >
+                        <Instagram className="h-4 w-4" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {(clientGallery.data ?? []).map((img: any) => (
+                  <div key={`gallery-public-${img.id}`} className="rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 shadow-sm">
+                    <img
+                      src={img.image_url || img.imageUrl}
+                      alt={img.caption || "Gallery"}
+                      className="h-28 w-full object-cover cursor-zoom-in"
+                      onClick={() => setZoomedMedia({ src: img.image_url || img.imageUrl, title: img.caption || "Barber post" })}
+                    />
+                    <p className="text-xs px-2 py-1 text-zinc-600 dark:text-zinc-300 truncate">{img.caption || "Barber post"}</p>
                   </div>
-                );
-              })}
+                ))}
+                {(clientGallery.data ?? []).length === 0 ? (
+                  <p className="text-sm text-zinc-500 dark:text-zinc-300 col-span-full">No gallery posts for this barber yet.</p>
+                ) : null}
+              </div>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {(clientGallery.data ?? []).map((img: any) => (
-                <div key={`gallery-public-${img.id}`} className="rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 shadow-sm">
-                  <img
-                    src={img.image_url || img.imageUrl}
-                    alt={img.caption || "Gallery"}
-                    className="h-28 w-full object-cover cursor-zoom-in"
-                    onClick={() => setZoomedMedia({ src: img.image_url || img.imageUrl, title: img.caption || "Barber post" })}
-                  />
-                  <p className="text-xs px-2 py-1 text-zinc-600 dark:text-zinc-300 truncate">{img.caption || "Barber post"}</p>
-                </div>
-              ))}
-              {(clientGallery.data ?? []).length === 0 ? (
-                <p className="text-sm text-zinc-500 dark:text-zinc-300 col-span-full">No gallery posts for this barber yet.</p>
-              ) : null}
-            </div>
-          </div>
             <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 md:col-span-3 shadow-sm">
               <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                 <div>

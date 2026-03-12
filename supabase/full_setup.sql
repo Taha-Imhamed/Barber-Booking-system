@@ -265,28 +265,3 @@ values
   ('Starter Reward', 100, 10, true),
   ('Premium Reward', 250, 20, true)
 on conflict (name) do nothing;
-
-insert into appointments (
-  client_id,
-  guest_first_name,
-  guest_last_name,
-  guest_phone,
-  guest_email,
-  barber_id,
-  service_id,
-  branch_id,
-  appointment_date,
-  status
-)
-select
-  null,
-  'Alice',
-  'Johnson',
-  '3333333333',
-  'alice@example.com',
-  (select id from users where username = 'barber1' limit 1),
-  (select id from services where name = 'Haircut' limit 1),
-  (select id from branches where name = 'A' limit 1),
-  now() + interval '1 day',
-  'pending'
-where not exists (select 1 from appointments where guest_email = 'alice@example.com');

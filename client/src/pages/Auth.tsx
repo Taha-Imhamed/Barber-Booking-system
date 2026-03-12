@@ -21,22 +21,6 @@ function GoogleIcon() {
   );
 }
 
-function FacebookIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-current">
-      <path d="M24 12.07C24 5.4 18.63 0 12 0S0 5.4 0 12.07c0 6.03 4.39 11.03 10.13 11.93v-8.44H7.08v-3.49h3.05V9.41c0-3.03 1.79-4.7 4.54-4.7 1.31 0 2.69.24 2.69.24v2.98h-1.52c-1.5 0-1.96.94-1.96 1.9v2.29h3.33l-.53 3.49h-2.8V24C19.61 23.1 24 18.1 24 12.07z" />
-    </svg>
-  );
-}
-
-function AppleIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-current">
-      <path d="M16.37 12.23c.02 2.4 2.1 3.2 2.13 3.21-.02.06-.33 1.14-1.08 2.26-.65.97-1.33 1.94-2.39 1.96-1.04.02-1.37-.62-2.56-.62s-1.56.6-2.54.64c-1.02.04-1.8-1.03-2.46-2-.84-1.21-1.48-3.42-.62-4.91.43-.74 1.21-1.21 2.05-1.22 1.01-.02 1.96.68 2.56.68.6 0 1.73-.84 2.92-.71.5.02 1.9.2 2.8 1.52-.07.04-1.67.98-1.65 2.89zM14.6 4.55c.54-.66.9-1.58.8-2.5-.77.03-1.71.52-2.26 1.17-.5.58-.94 1.52-.82 2.42.86.07 1.74-.44 2.28-1.09z" />
-    </svg>
-  );
-}
-
 export default function Auth() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -120,16 +104,6 @@ export default function Auth() {
       .catch((err: any) => {
         toast({ variant: "destructive", title: t("verificationFailed"), description: err.message || t("invalidLink") });
       });
-  }, [toast]);
-
-  useEffect(() => {
-    const provider = new URLSearchParams(window.location.search).get("provider");
-    if (provider === "facebook_not_configured") {
-      toast({ variant: "destructive", title: "Facebook Login", description: "Facebook OAuth is not configured yet." });
-    }
-    if (provider === "apple_not_configured") {
-      toast({ variant: "destructive", title: "Apple Sign-In", description: "Apple OAuth is not configured yet." });
-    }
   }, [toast]);
 
   useEffect(() => {
@@ -242,14 +216,6 @@ export default function Auth() {
               <Button type="button" variant="outline" className="w-full border-zinc-300 dark:border-zinc-700" onClick={signInWithGoogle}>
                 <GoogleIcon />
                 {t("googleSignIn")} {t("clientsOnly")}
-              </Button>
-              <Button type="button" variant="outline" className="w-full justify-center gap-2 border-zinc-300 dark:border-zinc-700" disabled title="Facebook OAuth is not implemented on the server yet.">
-                <FacebookIcon />
-                Facebook Sign-In
-              </Button>
-              <Button type="button" variant="outline" className="w-full justify-center gap-2 border-zinc-300 dark:border-zinc-700" disabled title="Apple OAuth is not implemented on the server yet.">
-                <AppleIcon />
-                Apple Sign-In
               </Button>
               {!isLogin && (
                 <Button type="button" variant="ghost" className="w-full text-zinc-600" onClick={handleResendVerification} disabled={isResendingVerification}>
