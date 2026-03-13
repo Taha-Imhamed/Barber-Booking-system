@@ -1579,8 +1579,12 @@ export async function registerRoutes(
   });
 
   app.get(api.admin.adminsList.path, async (req, res) => {
-    const admin = await requireAdminPermission(req, res, "manage_admins");
+    const admin = await requireAdmin(req, res);
     if (!admin) return;
+    if (!hasAdminPermission(admin, "manage_admins") && !hasAdminPermission(admin, "developer")) {
+      res.status(403).json({ message: "No access to this section." });
+      return;
+    }
     try {
       const users = await storage.getUsers();
       const admins = users
@@ -1620,8 +1624,12 @@ export async function registerRoutes(
   });
 
   app.patch(api.admin.changeAdminPassword.path, async (req, res) => {
-    const admin = await requireAdminPermission(req, res, "manage_admins");
+    const admin = await requireAdmin(req, res);
     if (!admin) return;
+    if (!hasAdminPermission(admin, "manage_admins") && !hasAdminPermission(admin, "developer")) {
+      res.status(403).json({ message: "No access to this section." });
+      return;
+    }
     try {
       const id = Number.parseInt(req.params.id, 10);
       const target = await storage.getUser(id);
