@@ -240,6 +240,7 @@ export default function AdminDashboard() {
   const [developerAdmins, setDeveloperAdmins] = useState<any[]>([]);
   const [passwordTargetAdminId, setPasswordTargetAdminId] = useState<string>("");
   const [passwordTargetUsername, setPasswordTargetUsername] = useState("");
+  const [passwordTargetOriginalUsername, setPasswordTargetOriginalUsername] = useState("");
   const [passwordTargetValue, setPasswordTargetValue] = useState("");
   const [adminThemeKey, setAdminThemeKey] = useState<AdminThemeKey>(() => {
     const saved = window.localStorage.getItem("admin_theme_key");
@@ -805,8 +806,10 @@ export default function AdminDashboard() {
     }
     try {
       const body: { username?: string; password?: string } = {};
-      if (passwordTargetUsername.trim().length >= 3) {
-        body.username = passwordTargetUsername.trim();
+      const nextUsername = passwordTargetUsername.trim();
+      const originalUsername = passwordTargetOriginalUsername.trim();
+      if (nextUsername.length >= 3 && nextUsername.toLowerCase() !== originalUsername.toLowerCase()) {
+        body.username = nextUsername;
       }
       if (passwordTargetValue.length >= 6) {
         body.password = passwordTargetValue;
@@ -2316,7 +2319,9 @@ export default function AdminDashboard() {
                   onValueChange={(value) => {
                     setPasswordTargetAdminId(value);
                     const selected = developerAdmins.find((u) => String(u.id) === value);
-                    setPasswordTargetUsername(selected?.username ?? "");
+                    const nextUsername = selected?.username ?? "";
+                    setPasswordTargetUsername(nextUsername);
+                    setPasswordTargetOriginalUsername(nextUsername);
                   }}
                 >
                   <SelectTrigger className="bg-zinc-900 border-zinc-700 text-zinc-100">

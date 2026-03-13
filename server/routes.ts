@@ -1579,7 +1579,7 @@ export async function registerRoutes(
   });
 
   app.get(api.admin.adminsList.path, async (req, res) => {
-    const admin = await requireAdminPermission(req, res, "developer");
+    const admin = await requireAdminPermission(req, res, "manage_admins");
     if (!admin) return;
     try {
       const users = await storage.getUsers();
@@ -1620,7 +1620,7 @@ export async function registerRoutes(
   });
 
   app.patch(api.admin.changeAdminPassword.path, async (req, res) => {
-    const admin = await requireAdminPermission(req, res, "developer");
+    const admin = await requireAdminPermission(req, res, "manage_admins");
     if (!admin) return;
     try {
       const id = Number.parseInt(req.params.id, 10);
