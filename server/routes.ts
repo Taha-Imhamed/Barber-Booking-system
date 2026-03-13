@@ -1455,7 +1455,16 @@ export async function registerRoutes(
     try {
       const admin = await requireAdminPermission(req, res, "appointments");
       if (!admin) return;
-      const { ids } = api.admin.deleteAppointments.input.parse(req.body);
+      const raw = req.body ?? {};
+      const candidateIds =
+        Array.isArray(raw.ids) ? raw.ids :
+        Array.isArray((raw as any).appointmentIds) ? (raw as any).appointmentIds :
+        (raw as any).id != null ? [(raw as any).id] :
+        [];
+      if (candidateIds.length === 0) {
+        return res.status(400).json({ message: "Provide appointment ids to delete." });
+      }
+      const { ids } = api.admin.deleteAppointments.input.parse({ ids: candidateIds });
       const deleted = await storage.deleteAppointmentsByIds(ids);
       res.json({ ok: true, deleted });
     } catch (error: any) {
