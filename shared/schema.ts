@@ -34,6 +34,7 @@ export const users = pgTable("users", {
   isFlaggedNoShow: boolean("is_flagged_no_show").default(false),
   bookingCreditCents: integer("booking_credit_cents").default(0),
   adminPermissions: text("admin_permissions").default("[]"),
+  isDeleted: boolean("is_deleted").default(false),
 });
 
 export const services = pgTable("services", {
@@ -41,6 +42,7 @@ export const services = pgTable("services", {
   name: text("name").notNull(),
   price: integer("price").notNull(),
   durationMinutes: integer("duration_minutes").notNull(),
+  isDeleted: boolean("is_deleted").default(false),
 });
 
 export const appointments = pgTable("appointments", {

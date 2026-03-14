@@ -75,6 +75,7 @@ async function ensureRuntimeSchema() {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_flagged_no_show boolean`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS booking_credit_cents integer`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_permissions text`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_deleted boolean`);
   await pool.query(`ALTER TABLE branches ADD COLUMN IF NOT EXISTS latitude real`);
   await pool.query(`ALTER TABLE branches ADD COLUMN IF NOT EXISTS longitude real`);
   await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS proposed_date timestamp`);
@@ -89,6 +90,7 @@ async function ensureRuntimeSchema() {
   await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS total_price integer`);
   await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS cancelled_at timestamp`);
   await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS no_show_marked_at timestamp`);
+  await pool.query(`ALTER TABLE services ADD COLUMN IF NOT EXISTS is_deleted boolean`);
   await pool.query(`UPDATE users SET auth_provider = COALESCE(auth_provider, 'local')`);
   await pool.query(`UPDATE users SET email_verified = COALESCE(email_verified, false)`);
   await pool.query(`UPDATE users SET is_available = COALESCE(is_available, true)`);
@@ -97,6 +99,7 @@ async function ensureRuntimeSchema() {
   await pool.query(`UPDATE users SET is_flagged_no_show = COALESCE(is_flagged_no_show, false)`);
   await pool.query(`UPDATE users SET booking_credit_cents = COALESCE(booking_credit_cents, 0)`);
   await pool.query(`UPDATE users SET admin_permissions = COALESCE(admin_permissions, '[]')`);
+  await pool.query(`UPDATE users SET is_deleted = COALESCE(is_deleted, false)`);
   await pool.query(`UPDATE users SET email_verified = true WHERE role IN ('admin', 'barber')`);
   await pool.query(`ALTER TABLE users ALTER COLUMN auth_provider SET DEFAULT 'local'`);
   await pool.query(`ALTER TABLE users ALTER COLUMN auth_provider SET NOT NULL`);
@@ -107,13 +110,16 @@ async function ensureRuntimeSchema() {
   await pool.query(`ALTER TABLE users ALTER COLUMN is_flagged_no_show SET DEFAULT false`);
   await pool.query(`ALTER TABLE users ALTER COLUMN booking_credit_cents SET DEFAULT 0`);
   await pool.query(`ALTER TABLE users ALTER COLUMN admin_permissions SET DEFAULT '[]'`);
+  await pool.query(`ALTER TABLE users ALTER COLUMN is_deleted SET DEFAULT false`);
   await pool.query(`UPDATE appointments SET proposed_status = COALESCE(proposed_status, 'none')`);
   await pool.query(`UPDATE appointments SET is_deleted = COALESCE(is_deleted, false)`);
   await pool.query(`UPDATE appointments SET payment_method = COALESCE(payment_method, 'cash_on_arrival')`);
   await pool.query(`UPDATE appointments SET payment_status = COALESCE(payment_status, 'unpaid')`);
   await pool.query(`UPDATE appointments SET prepaid_amount = COALESCE(prepaid_amount, 0)`);
+  await pool.query(`UPDATE services SET is_deleted = COALESCE(is_deleted, false)`);
   await pool.query(`ALTER TABLE appointments ALTER COLUMN proposed_status SET DEFAULT 'none'`);
   await pool.query(`ALTER TABLE appointments ALTER COLUMN is_deleted SET DEFAULT false`);
+  await pool.query(`ALTER TABLE services ALTER COLUMN is_deleted SET DEFAULT false`);
   await pool.query(`ALTER TABLE appointments ALTER COLUMN payment_method SET DEFAULT 'cash_on_arrival'`);
   await pool.query(`ALTER TABLE appointments ALTER COLUMN payment_status SET DEFAULT 'unpaid'`);
   await pool.query(`ALTER TABLE appointments ALTER COLUMN prepaid_amount SET DEFAULT 0`);

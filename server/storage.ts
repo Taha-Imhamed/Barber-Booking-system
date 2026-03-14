@@ -18,6 +18,7 @@ import {
   appointmentServices,
   appointmentReminders,
   reviews,
+  waitlist,
   type UserType,
   type BranchType,
   type ServiceType,
@@ -34,7 +35,7 @@ import {
   type ChatMessageType,
   type AppSettingType,
 } from "@shared/schema";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, and } from "drizzle-orm";
 
 export interface IStorage {
   // Users (Auth & Barbers)
@@ -45,6 +46,7 @@ export interface IStorage {
   getUsers(): Promise<UserType[]>;
   createUser(user: typeof users.$inferInsert): Promise<UserType>;
   updateUser(id: number, user: Partial<Omit<UserType, "id">>): Promise<UserType>;
+  deleteUser(id: number): Promise<boolean>;
   updateUserLoyaltyPoints(userId: number, pointsToAdd: number): Promise<UserType | undefined>;
   getBarbers(): Promise<UserType[]>;
   deleteBarber(id: number): Promise<boolean>;
@@ -58,6 +60,7 @@ export interface IStorage {
   getServices(): Promise<ServiceType[]>;
   createService(service: Omit<ServiceType, "id">): Promise<ServiceType>;
   updateService(id: number, service: Partial<Omit<ServiceType, "id">>): Promise<ServiceType>;
+  deleteService(id: number): Promise<boolean>;
   
   // Appointments
   getAppointments(): Promise<AppointmentType[]>;
@@ -125,7 +128,7 @@ export interface IStorage {
 export class DatabaseStorage implements IStorage {
   // Users
   async getUser(id: number): Promise<UserType | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
+    const [user] = await db.select().from(users).where(and(eq(users.id, id), eq(users.isDeleted, false)));
     return user;
   }
   
@@ -134,22 +137,22 @@ export class DatabaseStorage implements IStorage {
     const [user] = await db
       .select()
       .from(users)
-      .where(sql`lower(${users.username}) = ${normalized}`);
+      .where(sql`lower(${users.username}) = ${normalized} AND ${users.isDeleted} = false`);
     return user;
   }
 
   async getUserByEmail(email: string): Promise<UserType | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.email, email));
+    const [user] = await db.select().from(users).where(and(eq(users.email, email), eq(users.isDeleted, false)));
     return user;
   }
 
   async getUserByGoogleId(googleId: string): Promise<UserType | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.googleId, googleId));
+    const [user] = await db.select().from(users).where(and(eq(users.googleId, googleId), eq(users.isDeleted, false)));
     return user;
   }
 
   async getUsers(): Promise<UserType[]> {
-    return await db.select().from(users).orderBy(desc(users.id));
+    return await db.select().from(users).where(eq(users.isDeleted, false)).orderBy(desc(users.id));
   }
   
   async createUser(user: typeof users.$inferInsert): Promise<UserType> {
@@ -160,6 +163,24 @@ export class DatabaseStorage implements IStorage {
   async updateUser(id: number, user: Partial<Omit<UserType, "id">>): Promise<UserType> {
     const [updatedUser] = await db.update(users).set(user).where(eq(users.id, id)).returning();
     return updatedUser;
+  }
+
+  async deleteUser(id: number): Promise<boolean> {
+    const [updated] = await db
+      .update(users)
+      .set({
+        isDeleted: true,
+        username: null,
+        email: null,
+        googleId: null,
+        password: null,
+        adminPermissions: "[]",
+        isAvailable: false,
+        branchId: null,
+      })
+      .where(eq(users.id, id))
+      .returning({ id: users.id });
+    return Boolean(updated);
   }
 
   async updateUserLoyaltyPoints(userId: number, pointsToAdd: number): Promise<UserType | undefined> {
@@ -175,7 +196,7 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getBarbers(): Promise<UserType[]> {
-    return await db.select().from(users).where(eq(users.role, 'barber'));
+    return await db.select().from(users).where(and(eq(users.role, "barber"), eq(users.isDeleted, false)));
   }
 
   async deleteBarber(id: number): Promise<boolean> {
@@ -203,13 +224,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteBranch(id: number): Promise<boolean> {
+    const branchItems = await db.select().from(branches).orderBy(desc(branches.id));
+    const fallback = branchItems.find((b) => Number(b.id) !== Number(id));
+    if (!fallback) return false;
+    await db.update(appointments).set({ branchId: fallback.id }).where(eq(appointments.branchId, id));
+    await db.update(users).set({ branchId: fallback.id }).where(eq(users.branchId, id));
     const deleted = await db.delete(branches).where(eq(branches.id, id)).returning({ id: branches.id });
     return deleted.length > 0;
   }
   
   // Services
   async getServices(): Promise<ServiceType[]> {
-    return await db.select().from(services);
+    return await db.select().from(services).where(eq(services.isDeleted, false));
   }
   
   async createService(service: Omit<ServiceType, "id">): Promise<ServiceType> {
@@ -220,6 +246,17 @@ export class DatabaseStorage implements IStorage {
   async updateService(id: number, service: Partial<Omit<ServiceType, "id">>): Promise<ServiceType> {
     const [updatedService] = await db.update(services).set(service).where(eq(services.id, id)).returning();
     return updatedService;
+  }
+
+  async deleteService(id: number): Promise<boolean> {
+    const serviceItems = await db.select().from(services).orderBy(desc(services.id));
+    const fallback = serviceItems.find((s) => Number(s.id) !== Number(id));
+    if (!fallback) return false;
+    await db.update(appointments).set({ serviceId: fallback.id }).where(eq(appointments.serviceId, id));
+    await db.update(appointmentServices).set({ serviceId: fallback.id }).where(eq(appointmentServices.serviceId, id));
+    await db.update(waitlist).set({ serviceId: fallback.id }).where(eq(waitlist.serviceId, id));
+    const deleted = await db.delete(services).where(eq(services.id, id)).returning({ id: services.id });
+    return deleted.length > 0;
   }
   
   // Appointments

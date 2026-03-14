@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { api } from "@shared/routes";
+import { api, buildUrl } from "@shared/routes";
 
 export function useSendAdminMessage() {
   return useMutation({
@@ -17,3 +17,16 @@ export function useSendAdminMessage() {
   });
 }
 
+export function useDeleteAdminUser() {
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(buildUrl(api.admin.deleteUser.path, { id }), {
+        method: api.admin.deleteUser.method,
+        credentials: "include",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "Failed to delete user");
+      return data;
+    },
+  });
+}

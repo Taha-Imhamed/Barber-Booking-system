@@ -599,14 +599,18 @@ export async function registerRoutes(
     try {
       const id = Number.parseInt(req.params.id, 10);
       const ok = await storage.deleteBranch(id);
+      if (!ok) {
+        return res.status(400).json({ message: "Cannot delete the last branch. Create another branch first." });
+      }
       res.json({ ok });
     } catch {
-      res.status(400).json({ message: "Cannot delete branch in use by appointments or users." });
+      res.status(400).json({ message: "Cannot delete branch right now. Please try again." });
     }
   });
 
   app.get(api.services.list.path, async (_req, res) => {
     const serviceItems = await storage.getServices();
+    res.set("Cache-Control", "no-store");
     res.json(serviceItems);
   });
 
@@ -635,6 +639,21 @@ export async function registerRoutes(
     }
   });
 
+  app.delete(api.services.delete.path, async (req, res) => {
+    const admin = await requireAdminPermission(req, res, "services");
+    if (!admin) return;
+    try {
+      const id = Number.parseInt(req.params.id, 10);
+      const ok = await storage.deleteService(id);
+      if (!ok) {
+        return res.status(400).json({ message: "Cannot delete the last service. Create another service first." });
+      }
+      res.json({ ok });
+    } catch {
+      res.status(400).json({ message: "Cannot delete service right now." });
+    }
+  });
+
   app.get(api.barbers.list.path, async (_req, res) => {
     const barbers = await storage.getBarbers();
     res.json(barbers);
@@ -646,30 +665,61 @@ export async function registerRoutes(
     try {
       const input = api.barbers.create.input.parse(req.body);
       const normalizedUsername = input.username?.trim().toLowerCase() ?? null;
+      if (!normalizedUsername) {
+        return res.status(400).json({ message: "Username is required." });
+      }
+      const existing = await storage.getUserByUsername(normalizedUsername);
+      if (existing) {
+        return res.status(400).json({ message: "Username already exists." });
+      }
       const hashedPassword = input.password ? await hash(input.password, 10) : null;
+      if (!hashedPassword) {
+        return res.status(400).json({ message: "Password is required." });
+      }
+      const nullIfEmpty = (value?: string | null) => {
+        if (typeof value !== "string") return value ?? null;
+        const trimmed = value.trim();
+        return trimmed.length > 0 ? trimmed : null;
+      };
       const barber = await storage.createUser({
         username: normalizedUsername,
-        googleId: input.googleId ?? null,
+        googleId: nullIfEmpty(input.googleId),
         password: hashedPassword,
         authProvider: "local",
         role: "barber",
-        firstName: input.firstName,
-        lastName: input.lastName,
-        phone: input.phone ?? null,
-        email: input.email ?? null,
+        firstName: input.firstName.trim(),
+        lastName: input.lastName.trim(),
+        phone: nullIfEmpty(input.phone),
+        email: nullIfEmpty(input.email),
         emailVerified: true,
         loyaltyPoints: input.loyaltyPoints ?? 0,
         branchId: input.branchId ?? null,
         yearsOfExperience: input.yearsOfExperience ?? null,
-        bio: input.bio ?? null,
-        photoUrl: input.photoUrl ?? null,
-        instagramUrl: input.instagramUrl ?? null,
+        bio: nullIfEmpty(input.bio),
+        photoUrl: nullIfEmpty(input.photoUrl),
+        instagramUrl: nullIfEmpty(input.instagramUrl),
         isAvailable: true,
         unavailableHours: "[]",
         adminPermissions: "[]",
       });
       res.status(201).json(barber);
-    } catch {
+    } catch (err: any) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message, field: err.errors[0].path.join(".") });
+      }
+      console.error("[barbers.create] failed", {
+        message: err?.message,
+        code: err?.code,
+        constraint: err?.constraint,
+        bodyKeys: Object.keys(req.body ?? {}),
+      });
+      if (process.env.NODE_ENV === "development") {
+        return res.status(400).json({
+          message: err?.message || "Bad Request",
+          code: err?.code,
+          constraint: err?.constraint,
+        });
+      }
       res.status(400).json({ message: "Bad Request" });
     }
   });
@@ -1545,6 +1595,31 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("[admin.usersList] failed", error);
       return res.status(400).json({ message: "Bad Request" });
+    }
+  });
+
+  app.delete(api.admin.deleteUser.path, async (req, res) => {
+    const admin = await requireAdmin(req, res);
+    if (!admin) return;
+    if (!hasAdminPermission(admin, "users") && !hasAdminPermission(admin, "manage_admins")) {
+      res.status(403).json({ message: "No access to this section." });
+      return;
+    }
+    try {
+      const id = Number.parseInt(req.params.id, 10);
+      const target = await storage.getUser(id);
+      if (!target) return res.status(404).json({ message: "User not found." });
+      if (id === admin.id) return res.status(400).json({ message: "You cannot delete your own account." });
+      if (target.role === "barber") {
+        return res.status(400).json({ message: "Delete barbers from the Barbers tab." });
+      }
+      if (target.role === "admin" && (target.username ?? "").toLowerCase() === "admin") {
+        return res.status(400).json({ message: "Main admin cannot be deleted." });
+      }
+      const ok = await storage.deleteUser(id);
+      return res.json({ ok });
+    } catch (error: any) {
+      return res.status(400).json({ message: error?.message || "Bad Request" });
     }
   });
 

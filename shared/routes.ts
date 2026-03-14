@@ -26,6 +26,35 @@ import {
 } from "./schema";
 
 export const insertUserSchema = createInsertSchema(users).omit({ id: true });
+const optionalTrimmedString = z.preprocess(
+  (val) => (typeof val === "string" && val.trim() === "" ? undefined : val),
+  z.string().optional(),
+);
+const optionalNullableString = z.preprocess(
+  (val) => (typeof val === "string" && val.trim() === "" ? null : val),
+  z.string().nullable().optional(),
+);
+const optionalEmail = z.preprocess(
+  (val) => (typeof val === "string" && val.trim() === "" ? undefined : val),
+  z.string().email().optional(),
+);
+
+export const createBarberSchema = z.object({
+  username: z.string().trim().min(1, "Username is required"),
+  password: z.string().trim().min(1, "Password is required"),
+  firstName: z.string().trim().min(1, "First name is required"),
+  lastName: z.string().trim().min(1, "Last name is required"),
+  email: optionalEmail,
+  phone: optionalTrimmedString,
+  branchId: z.number().int().nullable().optional(),
+  yearsOfExperience: z.number().int().nullable().optional(),
+  bio: optionalNullableString,
+  photoUrl: optionalNullableString,
+  instagramUrl: optionalNullableString,
+  loyaltyPoints: z.number().int().optional(),
+  googleId: optionalTrimmedString,
+  role: z.literal("barber").optional(),
+});
 export const insertBranchSchema = createInsertSchema(branches).omit({ id: true });
 export const insertServiceSchema = createInsertSchema(services).omit({ id: true });
 export const insertAppointmentSchema = createInsertSchema(appointments).omit({ id: true, createdAt: true });
@@ -154,19 +183,24 @@ export const api = {
       input: insertServiceSchema.partial(),
       responses: { 200: z.custom<typeof services.$inferSelect>() },
     },
+    delete: {
+      method: "DELETE" as const,
+      path: "/api/services/:id" as const,
+      responses: { 200: z.object({ ok: z.boolean() }) },
+    },
   },
-  barbers: {
-    list: {
-      method: "GET" as const,
-      path: "/api/barbers" as const,
-      responses: { 200: z.array(z.custom<typeof users.$inferSelect>()) },
-    },
-    create: {
-      method: "POST" as const,
-      path: "/api/barbers" as const,
-      input: insertUserSchema,
-      responses: { 201: z.custom<typeof users.$inferSelect>() },
-    },
+    barbers: {
+      list: {
+        method: "GET" as const,
+        path: "/api/barbers" as const,
+        responses: { 200: z.array(z.custom<typeof users.$inferSelect>()) },
+      },
+      create: {
+        method: "POST" as const,
+        path: "/api/barbers" as const,
+        input: createBarberSchema,
+        responses: { 201: z.custom<typeof users.$inferSelect>() },
+      },
     update: {
       method: "PATCH" as const,
       path: "/api/barbers/:id" as const,
@@ -286,6 +320,11 @@ export const api = {
           note: z.string().optional(),
         }),
       },
+    },
+    deleteUser: {
+      method: "DELETE" as const,
+      path: "/api/admin/users/:id" as const,
+      responses: { 200: z.object({ ok: z.boolean() }) },
     },
     developerSnapshot: {
       method: "GET" as const,

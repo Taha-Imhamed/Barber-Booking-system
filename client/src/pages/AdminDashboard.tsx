@@ -12,13 +12,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useAuth } from "@/hooks/use-auth";
 import { useAppointments, useUpdateAppointmentStatus } from "@/hooks/use-appointments";
 import { useBarbers, useCreateBarber, useUpdateBarber, useDeleteBarber } from "@/hooks/use-barbers";
-import { useServices, useCreateService, useUpdateService } from "@/hooks/use-services";
+import { useServices, useCreateService, useUpdateService, useDeleteService } from "@/hooks/use-services";
 import { useBranches, useCreateBranch, useDeleteBranch } from "@/hooks/use-branches";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import type { AppointmentType, ExpenseType, ServiceType, UserType } from "@shared/routes";
 import { Textarea } from "@/components/ui/textarea";
-import { useSendAdminMessage } from "@/hooks/use-admin";
+import { useSendAdminMessage, useDeleteAdminUser } from "@/hooks/use-admin";
 import { useEarningsSummary } from "@/hooks/use-earnings";
 import { api, buildUrl } from "@shared/routes";
 import { usePublicSettings, useSaveAdminSettings } from "@/hooks/use-settings";
@@ -177,6 +177,7 @@ export default function AdminDashboard() {
 
   const createService = useCreateService();
   const updateService = useUpdateService();
+  const deleteService = useDeleteService();
   const createBarber = useCreateBarber();
   const updateBarber = useUpdateBarber();
   const deleteBarber = useDeleteBarber();
@@ -184,6 +185,7 @@ export default function AdminDashboard() {
   const deleteBranch = useDeleteBranch();
   const updateStatus = useUpdateAppointmentStatus();
   const sendAdminMessage = useSendAdminMessage();
+  const deleteAdminUser = useDeleteAdminUser();
   const { data: earnings } = useEarningsSummary();
   const { data: settings } = usePublicSettings();
   const saveSettings = useSaveAdminSettings();
@@ -2059,6 +2061,23 @@ export default function AdminDashboard() {
                     <Button size="sm" variant="outline" className="mt-2" onClick={() => setEditingService(service)}>
                       <Pencil className="w-3 h-3 mr-2" /> Edit
                     </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      className="mt-2"
+                      onClick={async () => {
+                        if (!window.confirm(`Delete service "${service.name}"?`)) return;
+                        try {
+                          await deleteService.mutateAsync(service.id);
+                          toast({ title: "Service deleted" });
+                        } catch (err: any) {
+                          toast({ variant: "destructive", title: "Delete failed", description: err.message });
+                        }
+                      }}
+                      disabled={deleteService.isPending}
+                    >
+                      <Trash2 className="w-3 h-3 mr-2" /> Delete
+                    </Button>
                   </CardHeader>
                 </Card>
               ))}
@@ -2240,16 +2259,17 @@ export default function AdminDashboard() {
                       <TableHead>Provider</TableHead>
                       <TableHead>Email Verified</TableHead>
                       <TableHead>Reservations</TableHead>
+                      <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {usersLoading ? (
                       <TableRow>
-                        <TableCell colSpan={10} className="text-center text-zinc-500">Loading users...</TableCell>
+                        <TableCell colSpan={11} className="text-center text-zinc-500">Loading users...</TableCell>
                       </TableRow>
                     ) : adminUsers.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={10} className="text-center text-zinc-500">No users found.</TableCell>
+                        <TableCell colSpan={11} className="text-center text-zinc-500">No users found.</TableCell>
                       </TableRow>
                     ) : (
                       adminUsers.map((u) => (
@@ -2264,6 +2284,30 @@ export default function AdminDashboard() {
                           <TableCell>{u.authProvider || "-"}</TableCell>
                           <TableCell>{u.emailVerified ? "yes" : "no"}</TableCell>
                           <TableCell>{u.reservationCount ?? 0}</TableCell>
+                          <TableCell>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              disabled={
+                                deleteAdminUser.isPending ||
+                                Number(u.id) === Number(user?.id) ||
+                                (u.role !== "client" && u.role !== "admin") ||
+                                String(u.username ?? "").toLowerCase() === "admin"
+                              }
+                              onClick={async () => {
+                                if (!window.confirm(`Delete ${u.role} "${u.username || u.email || `User #${u.id}`}"?`)) return;
+                                try {
+                                  await deleteAdminUser.mutateAsync(Number(u.id));
+                                  toast({ title: "User deleted" });
+                                  await loadAdminUsers(userViewType);
+                                } catch (err: any) {
+                                  toast({ variant: "destructive", title: "Delete failed", description: err.message });
+                                }
+                              }}
+                            >
+                              <Trash2 className="w-3 h-3 mr-2" /> Delete
+                            </Button>
+                          </TableCell>
                         </TableRow>
                       ))
                     )}
